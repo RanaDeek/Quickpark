@@ -10,15 +10,17 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-// ✅ MongoDB Connection (Atlas or Local)
-const mongoURI = process.env.MONGO_DB || 'mongodb://localhost:27017/QuickParkDB';
+
+// MongoDB Connection String (MongoDB Atlas)
+const mongoURI = process.env.MONGO_URI || 'mongodb+srv://admin:admin123@cluster0.sift4do.mongodb.net/QuickParkDB?retryWrites=true&w=majority&appName=Cluster0';
 
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
 })
-.then(() => console.log('✅ MongoDB Connected'))
+.then(() => console.log('✅ Connected to MongoDB Atlas'))
 .catch(err => console.error('❌ MongoDB Error:', err));
+
 
 // ✅ Schema and Model
 const userSchema = new mongoose.Schema({
