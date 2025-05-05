@@ -4,19 +4,21 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors());
 app.use(express.json());
 
+// ✅ MongoDB Connection (Atlas or Local)
+const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/QuickParkDB';
 
-// ✅ MongoDB Connection (Database: QuickParkDB)
-mongoose.connect('mongodb://localhost:27017/QuickParkDB', {
+mongoose.connect(mongoURI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
-}).then(() => console.log('✅ MongoDB Connected'))
-  .catch(err => console.error('❌ MongoDB Error:', err));
+})
+.then(() => console.log('✅ MongoDB Connected'))
+.catch(err => console.error('❌ MongoDB Error:', err));
 
 // ✅ Schema and Model
 const userSchema = new mongoose.Schema({
@@ -68,5 +70,5 @@ app.post('/api/users', async (req, res) => {
 
 // ✅ Start Server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running at http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
