@@ -11,7 +11,7 @@ app.use(cors());
 app.use(express.json());
 
 // ✅ MongoDB Connection (Atlas or Local)
-const mongoURI = process.env.MONGO_URI || 'mongodb://localhost:27017/QuickParkDB';
+const mongoURI = process.env.MONGO_DB || 'mongodb://localhost:27017/QuickParkDB';
 
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
