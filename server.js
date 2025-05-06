@@ -139,6 +139,8 @@ app.post('/api/users', async (req, res) => {
     try {
       const { userName, password } = req.body;
   
+      console.log(`Login attempt for user: ${userName}`); // Log username
+  
       // Validate input
       if (!userName || !password) {
         return res.status(400).json({ message: 'Username and password are required.' });
@@ -152,6 +154,8 @@ app.post('/api/users', async (req, res) => {
   
       // Compare the password using bcrypt
       const isMatch = await bcrypt.compare(password, user.password);
+      console.log(`Password comparison result for ${userName}: ${isMatch}`); // Log comparison result
+  
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
