@@ -174,25 +174,37 @@ app.post('/api/users', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-  
-    app.post('/api/reset-password', async (req, res) => {
+  app.post('/api/reset-password', async (req, res) => {
     const { otpToken, newPassword } = req.body;
   
     try {
-      // Verify OTP token
+      // 1. Decode the OTP token
       const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
       const email = decoded.email;
   
-      // Hash the new password
-      
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      // 2. Log email and new password
+      console.log("Resetting password for:", email);
+      console.log("New password:", newPassword);
   
-      // Update the user's password in the database
-      await User.updateOne({ email }, { password: hashedPassword });
+      // 3. Hash the new password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      console.log("Hashed password:", hashedPassword);
+  
+      // 4. Update user's password
+      const updateResult = await User.updateOne(
+        { email },
+        { $set: { password: hashedPassword } }
+      );
+  
+      console.log("Update result:", updateResult);
+  
+      if (updateResult.modifiedCount === 0) {
+        return res.status(400).json({ message: 'Failed to update password.' });
+      }
   
       res.status(200).json({ message: 'Password has been reset successfully.' });
     } catch (error) {
-      console.error(error);
+      console.error("❌ Reset error:", error);
       res.status(500).json({ message: 'Failed to reset password.' });
     }
   });
