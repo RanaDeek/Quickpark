@@ -2,6 +2,9 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const nodemailer = require('nodemailer');
+require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,19 +13,17 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
-
 // MongoDB Connection String (MongoDB Atlas)
-const mongoURI = process.env.MONGO_URI || 'mongodb+srv://admin:admin123@cluster0.sift4do.mongodb.net/QuickParkDB?retryWrites=true&w=majority&appName=Cluster0';
+const mongoURI = process.env.MONGO_URI;
 
 mongoose.connect(mongoURI, {
   useNewUrlParser: true,
-  useUnifiedTopology: true
+  useUnifiedTopology: true,
 })
 .then(() => console.log('✅ Connected to MongoDB Atlas'))
 .catch(err => console.error('❌ MongoDB Error:', err));
 
-
-// ✅ Schema and Model
+// User Schema and Model
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
@@ -32,82 +33,74 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-// ✅ API: Register User
-app.post('/api/users', async (req, res) => {
+// Send OTP Email
+const sendOTPEmail = async (email, otp) => {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASSWORD,
+    },
+  });
+
+  const mailOptions = {
+    from: process.env.EMAIL_USER,
+    to: email,
+    subject: 'Your OTP Code for Password Reset',
+    text: `Your OTP code is: ${otp}`,
+  };
+
+  await transporter.sendMail(mailOptions);
+};
+
+// Request OTP
+app.post('/api/request-otp', async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+  if (!user) return res.status(404).json({ message: 'User not found.' });
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+
+  // Sign OTP into a JWT (expires in 10 minutes)
+  const otpToken = jwt.sign(
+    { email, otp },
+    process.env.JWT_SECRET,  // Use the JWT secret
+    { expiresIn: '10m' }
+  );
+
+  await sendOTPEmail(email, otp); // Send OTP via email
+
+  return res.status(200).json({
+    message: 'OTP sent to your email.',
+    otpToken, // Send token to client
+  });
+});
+
+// Verify OTP and Reset Password
+app.post('/api/verify-otp', async (req, res) => {
+  const { otpToken, otp, newPassword } = req.body;
+
   try {
-    const { fullName, email, userName, password } = req.body;
+    const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
 
-    // Validate input
-    if (!fullName || !email || !userName || !password) {
-      return res.status(400).json({ message: 'All fields are required.' });
+    if (decoded.otp !== otp) {
+      return res.status(400).json({ message: 'Invalid OTP.' });
     }
 
-    // Check if email or username exists
-    const emailExists = await User.findOne({ email });
-    const userNameExists = await User.findOne({ userName });
+    const user = await User.findOne({ email: decoded.email });
+    if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    if (emailExists || userNameExists) {
-      return res.status(409).json({ message: 'Email or Username already exists.' });
-    }
+    // Hash the new password and update the user
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create and save user
-    const newUser = new User({
-      fullName,
-      email,
-      userName,
-      password: hashedPassword,
-    });
-
-    await newUser.save();
-
-    return res.status(201).json({ message: 'User registered successfully.' });
+    return res.status(200).json({ message: 'Password has been reset successfully.' });
   } catch (error) {
-    console.error('❌ Error in /api/users:', error);
-    return res.status(500).json({ message: 'Server error.' });
+    return res.status(400).json({ message: 'Invalid or expired token.' });
   }
 });
-// ✅ API: User Login
-app.post('/api/login', async (req, res) => {
-    try {
-      const { userName, password } = req.body;
-  
-      // Validate input
-      if (!userName || !password) {
-        return res.status(400).json({ message: 'Username and password are required.' });
-      }
-  
-      // Check if user exists
-      const user = await User.findOne({ userName });
-      if (!user) {
-        return res.status(401).json({ message: 'Invalid credentials.' });
-      }
-  
-      // Compare passwords
-      const isMatch = await bcrypt.compare(password, user.password);
-      if (!isMatch) {
-        return res.status(401).json({ message: 'Invalid credentials.' });
-      }
-  
-      // Successful login (you can also generate a token here if needed)
-      return res.status(200).json({
-        message: 'Login successful.',
-        user: {
-          id: user._id,
-          fullName: user.fullName,
-          email: user.email,
-          userName: user.userName
-        }
-      });
-    } catch (error) {
-      console.error('❌ Error in /api/login:', error);
-      return res.status(500).json({ message: 'Server error.' });
-    }
-  });
-  
-// ✅ Start Server
+
+// Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
