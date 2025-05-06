@@ -153,6 +153,9 @@ app.post('/api/users', async (req, res) => {
       }
   
       // Compare the password using bcrypt
+      console.log(`Password entered: ${password}`);
+        console.log(`Stored hash: ${user.password}`);
+
       const isMatch = await bcrypt.compare(password, user.password);
       console.log(`Password comparison result for ${userName}: ${isMatch}`); // Log comparison result
   
