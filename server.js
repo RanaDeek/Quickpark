@@ -134,27 +134,45 @@ app.post('/api/users', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-  app.post('/api/reset-password', async (req, res) => {
-    const { otpToken, newPassword } = req.body;
-  
-    if (!otpToken) {
-      return res.status(400).json({ message: 'Missing token.' });
-    }
-  
+
+app.post('/api/login', async (req, res) => {
     try {
-      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
-      const { email } = decoded;
+      const { userName, password } = req.body;
   
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await User.findOneAndUpdate({ email }, { password: hashedPassword });
+      // Validate input
+      if (!userName || !password) {
+        return res.status(400).json({ message: 'Username and password are required.' });
+      }
   
-      res.json({ message: 'Password updated successfully' });
-    } catch (err) {
-      console.error(err);
-      res.status(401).json({ message: 'Token expired or invalid' });
+      // Check if user exists
+      const user = await User.findOne({ userName });
+      if (!user) {
+        return res.status(401).json({ message: 'Invalid credentials.' });
+      }
+  
+      // Compare passwords
+      const isMatch = await bcrypt.compare(password, user.password);
+      if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid credentials.' });
+      }
+  
+      // Successful login (you can also generate a token here if needed)
+      return res.status(200).json({
+        message: 'Login successful.',
+        user: {
+          id: user._id,
+          fullName: user.fullName,
+          email: user.email,
+          userName: user.userName
+        }
+      });
+    } catch (error) {
+      console.error('❌ Error in /api/login:', error);
+      return res.status(500).json({ message: 'Server error.' });
     }
   });
-  
+  const jwt = require('jsonwebtoken');
+
   app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-});
+    console.log(`🚀 Server running on port ${PORT}`);
+  });
