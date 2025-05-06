@@ -138,6 +138,10 @@ app.post('/api/users', async (req, res) => {
 app.post('/api/reset-password', async (req, res) => {
     const { verifiedToken, newPassword } = req.body;
   
+    if (!verifiedToken) {
+      return res.status(400).json({ message: 'Missing token.' });
+    }
+  
     try {
       const decoded = jwt.verify(verifiedToken, process.env.JWT_SECRET);
       const { email } = decoded;
@@ -151,6 +155,7 @@ app.post('/api/reset-password', async (req, res) => {
       res.status(401).json({ message: 'Token expired or invalid' });
     }
   });
+  
   app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
