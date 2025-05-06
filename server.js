@@ -135,7 +135,7 @@ app.post('/api/users', async (req, res) => {
     }
   });
 
-app.post('/api/login', async (req, res) => {
+  app.post('/api/login', async (req, res) => {
     try {
       const { userName, password } = req.body;
   
@@ -150,13 +150,13 @@ app.post('/api/login', async (req, res) => {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
   
-      // Compare passwords
+      // Compare the password using bcrypt
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
   
-      // Successful login (you can also generate a token here if needed)
+      // Successful login
       return res.status(200).json({
         message: 'Login successful.',
         user: {
@@ -171,6 +171,7 @@ app.post('/api/login', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
+  
   app.post('/api/reset-password', async (req, res) => {
     const { otpToken, newPassword } = req.body;
   
