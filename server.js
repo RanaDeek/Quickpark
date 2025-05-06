@@ -149,9 +149,10 @@ app.post('/api/users', async (req, res) => {
       if (!user) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
-  
+      const hashedPassword = await bcrypt.hash(password, 10);
+
       // Compare passwords
-      const isMatch = await bcrypt.compare(password, user.password);
+      const isMatch = await bcrypt.compare(hashedPassword, user.password);
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
@@ -180,6 +181,7 @@ app.post('/api/users', async (req, res) => {
       const email = decoded.email;
   
       // Hash the new password
+      
       const hashedPassword = await bcrypt.hash(newPassword, 10);
   
       // Update the user's password in the database
