@@ -138,32 +138,22 @@ app.post('/api/users', async (req, res) => {
   app.post('/api/login', async (req, res) => {
     try {
       const { userName, password } = req.body;
+      console.log('Login attempt for user:', userName);
+      console.log('Password entered:', password);
   
-      console.log(`Login attempt for user: ${userName}`); // Log username
-  
-      // Validate input
-      if (!userName || !password) {
-        return res.status(400).json({ message: 'Username and password are required.' });
-      }
-  
-      // Check if user exists
       const user = await User.findOne({ userName });
       if (!user) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
   
-      // Compare the password using bcrypt
-      console.log(`Password entered: ${password}`);
-        console.log(`Stored hash: ${user.password}`);
-
+      console.log('Stored hash:', user.password);
       const isMatch = await bcrypt.compare(password, user.password);
-      console.log(`Password comparison result for ${userName}: ${isMatch}`); // Log comparison result
+      console.log('Password comparison result for', userName, ':', isMatch);
   
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
   
-      // Successful login
       return res.status(200).json({
         message: 'Login successful.',
         user: {
@@ -178,8 +168,7 @@ app.post('/api/users', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-  
-  app.post('/api/reset-password', async (req, res) => {
+    app.post('/api/reset-password', async (req, res) => {
     const { otpToken, newPassword } = req.body;
   
     try {
