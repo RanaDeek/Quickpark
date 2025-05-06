@@ -152,7 +152,8 @@ router.post('/reset-password', async (req, res) => {
       res.status(401).json({ message: 'Token expired or invalid' });
     }
   });
-  
+  module.exports = router;
+
   
 // Start Server
 app.listen(PORT, () => {
