@@ -138,22 +138,25 @@ app.post('/api/users', async (req, res) => {
   app.post('/api/login', async (req, res) => {
     try {
       const { userName, password } = req.body;
-      console.log('Login attempt for user:', userName);
-      console.log('Password entered:', password);
   
+      // Validate input
+      if (!userName || !password) {
+        return res.status(400).json({ message: 'Username and password are required.' });
+      }
+  
+      // Check if user exists
       const user = await User.findOne({ userName });
       if (!user) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
   
-      console.log('Stored hash:', user.password);
+      // Compare passwords
       const isMatch = await bcrypt.compare(password, user.password);
-      console.log('Password comparison result for', userName, ':', isMatch);
-  
       if (!isMatch) {
         return res.status(401).json({ message: 'Invalid credentials.' });
       }
   
+      // Successful login (you can also generate a token here if needed)
       return res.status(200).json({
         message: 'Login successful.',
         user: {
