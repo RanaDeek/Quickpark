@@ -76,7 +76,7 @@ app.post('/api/request-otp', async (req, res) => {
   });
 });
 app.post('/api/verify-otp', async (req, res) => {
-    const { otpToken, otp, newPassword } = req.body;
+    const { otpToken, otp } = req.body;
   
     try {
       // Verify the OTP token using JWT
@@ -86,14 +86,12 @@ app.post('/api/verify-otp', async (req, res) => {
         return res.status(400).json({ message: 'Invalid OTP.' });
       }
   
-      const user = await User.findOne({ email: decoded.email });
-      if (!user) return res.status(404).json({ message: 'User not found.' });
-  
-      // Hash the new password and update the user
-      user.password = await bcrypt.hash(newPassword, 10);
-      await user.save();
-  
-      return res.status(200).json({ message: 'Password has been reset successfully.' });
+      // OTP is valid
+      return res.status(200).json({
+        message: 'OTP verified successfully.',
+        email: decoded.email, // optional, if needed on client
+        verifiedToken: jwt.sign({ email: decoded.email }, process.env.JWT_SECRET, { expiresIn: '10m' })
+      });
     } catch (error) {
       console.error(error);
       return res.status(400).json({ message: 'Invalid or expired token.' });
@@ -138,10 +136,10 @@ app.post('/api/users', async (req, res) => {
   });
 // Reset Password (if OTP was verified earlier)
 app.post('/api/reset-password', async (req, res) => {
-    const { otpToken, newPassword } = req.body;
+    const { verifiedToken, newPassword } = req.body;
   
     try {
-      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+      const decoded = jwt.verify(verifiedToken, process.env.JWT_SECRET);
       const { email } = decoded;
   
       const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -149,10 +147,10 @@ app.post('/api/reset-password', async (req, res) => {
   
       res.json({ message: 'Password updated successfully' });
     } catch (err) {
+      console.error(err);
       res.status(401).json({ message: 'Token expired or invalid' });
     }
   });
-  
-app.listen(PORT, () => {
+  app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
