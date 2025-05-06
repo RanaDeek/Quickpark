@@ -134,16 +134,15 @@ app.post('/api/users', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-// Reset Password (if OTP was verified earlier)
-app.post('/api/reset-password', async (req, res) => {
-    const { verifiedToken, newPassword } = req.body;
+  app.post('/api/reset-password', async (req, res) => {
+    const { otpToken, newPassword } = req.body;
   
-    if (!verifiedToken) {
+    if (!otpToken) {
       return res.status(400).json({ message: 'Missing token.' });
     }
   
     try {
-      const decoded = jwt.verify(verifiedToken, process.env.JWT_SECRET);
+      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
       const { email } = decoded;
   
       const hashedPassword = await bcrypt.hash(newPassword, 10);
