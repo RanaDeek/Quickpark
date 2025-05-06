@@ -171,7 +171,6 @@ app.post('/api/login', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-  const jwt = require('jsonwebtoken');
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
