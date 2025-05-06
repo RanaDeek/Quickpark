@@ -136,6 +136,23 @@ app.post('/api/users', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
+  // 3. Reset Password
+router.post('/reset-password', async (req, res) => {
+    const { otpToken, newPassword } = req.body;
+  
+    try {
+      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+      const { email } = decoded;
+  
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await User.findOneAndUpdate({ email }, { password: hashedPassword });
+  
+      res.json({ message: 'Password updated successfully' });
+    } catch (err) {
+      res.status(401).json({ message: 'Token expired or invalid' });
+    }
+  });
+  
   
 // Start Server
 app.listen(PORT, () => {
