@@ -99,7 +99,43 @@ app.post('/api/verify-otp', async (req, res) => {
     return res.status(400).json({ message: 'Invalid or expired token.' });
   }
 });
-
+// POST endpoint to create a new user (User registration)
+app.post('/api/users', async (req, res) => {
+    const { fullName, email, userName, password } = req.body;
+  
+    try {
+      // Check if the user already exists
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Email already in use.' });
+      }
+  
+      const existingUserName = await User.findOne({ userName });
+      if (existingUserName) {
+        return res.status(400).json({ message: 'Username already taken.' });
+      }
+  
+      // Hash the password
+      const hashedPassword = await bcrypt.hash(password, 10);
+  
+      // Create a new user
+      const newUser = new User({
+        fullName,
+        email,
+        userName,
+        password: hashedPassword,
+      });
+  
+      // Save the user to the database
+      await newUser.save();
+  
+      return res.status(201).json({ message: 'User created successfully.' });
+    } catch (error) {
+      console.error(error);
+      return res.status(500).json({ message: 'Server error.' });
+    }
+  });
+  
 // Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
