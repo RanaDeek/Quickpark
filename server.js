@@ -75,30 +75,31 @@ app.post('/api/request-otp', async (req, res) => {
     otpToken, // Send token to client
   });
 });
-
-// Verify OTP and Reset Password
 app.post('/api/verify-otp', async (req, res) => {
-  const { otpToken, otp, newPassword } = req.body;
-
-  try {
-    const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
-
-    if (decoded.otp !== otp) {
-      return res.status(400).json({ message: 'Invalid OTP.' });
+    const { otpToken, otp, newPassword } = req.body;
+  
+    try {
+      // Verify the OTP token using JWT
+      const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+  
+      if (decoded.otp !== otp) {
+        return res.status(400).json({ message: 'Invalid OTP.' });
+      }
+  
+      const user = await User.findOne({ email: decoded.email });
+      if (!user) return res.status(404).json({ message: 'User not found.' });
+  
+      // Hash the new password and update the user
+      user.password = await bcrypt.hash(newPassword, 10);
+      await user.save();
+  
+      return res.status(200).json({ message: 'Password has been reset successfully.' });
+    } catch (error) {
+      console.error(error);
+      return res.status(400).json({ message: 'Invalid or expired token.' });
     }
-
-    const user = await User.findOne({ email: decoded.email });
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-
-    // Hash the new password and update the user
-    user.password = await bcrypt.hash(newPassword, 10);
-    await user.save();
-
-    return res.status(200).json({ message: 'Password has been reset successfully.' });
-  } catch (error) {
-    return res.status(400).json({ message: 'Invalid or expired token.' });
-  }
-});
+  });
+  
 // POST endpoint to create a new user (User registration)
 app.post('/api/users', async (req, res) => {
     const { fullName, email, userName, password } = req.body;
