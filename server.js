@@ -136,8 +136,8 @@ app.post('/api/users', async (req, res) => {
       return res.status(500).json({ message: 'Server error.' });
     }
   });
-  // 3. Reset Password
-router.post('/reset-password', async (req, res) => {
+// Reset Password (if OTP was verified earlier)
+app.post('/api/reset-password', async (req, res) => {
     const { otpToken, newPassword } = req.body;
   
     try {
@@ -152,10 +152,7 @@ router.post('/reset-password', async (req, res) => {
       res.status(401).json({ message: 'Token expired or invalid' });
     }
   });
-  module.exports = router;
-
   
-// Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
