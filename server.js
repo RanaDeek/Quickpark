@@ -250,7 +250,7 @@ app.get('/api/cars/user/:userName', async (req, res) => {
 });
 // POST to add a new car
 app.post('/api/cars', async (req, res) => {
-  const { plateNumber, carBrand, insuranceProvider, carModel, carType, userId } = req.body;
+  const { plateNumber, carBrand, insuranceProvider, carModel, carType, userName } = req.body;
 
   try {
     const existingCar = await Car.findOne({ plateNumber });
