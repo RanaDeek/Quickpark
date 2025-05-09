@@ -33,6 +33,19 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
+// Car Schema and Model
+const carSchema = new mongoose.Schema({
+  plateNumber: { type: String, required: true, unique: true },
+  carBrand: { type: String, required: true },
+  insuranceProvider: { type: String, required: true },
+  carModel: { type: String, required: true },
+  carType: { type: String, required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+});
+
+const Car = mongoose.model('Car', carSchema);
+
+
 // Send OTP Email
 const sendOTPEmail = async (email, otp) => {
   const transporter = nodemailer.createTransport({
@@ -223,6 +236,46 @@ app.get('/api/users/username/:userName', async (req, res) => {
     }
   });
   
+  // GET all cars for a specific user
+app.get('/api/cars/user/:userName', async (req, res) => {
+  const { userName } = req.params;
+
+  try {
+    const cars = await Car.find({ userName });
+    res.status(200).json(cars);
+  } catch (error) {
+    console.error('❌ Error fetching cars:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+// POST to add a new car
+app.post('/api/cars', async (req, res) => {
+  const { plateNumber, carBrand, insuranceProvider, carModel, carType, userId } = req.body;
+
+  try {
+    const existingCar = await Car.findOne({ plateNumber });
+    if (existingCar) {
+      return res.status(400).json({ message: 'Plate number already registered.' });
+    }
+
+    const newCar = new Car({
+      plateNumber,
+      carBrand,
+      insuranceProvider,
+      carModel,
+      carType,
+      userId,
+    });
+
+    await newCar.save();
+    res.status(201).json({ message: 'Car registered successfully.' });
+  } catch (error) {
+    console.error('❌ Error registering car:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
   });
