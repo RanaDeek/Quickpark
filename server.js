@@ -236,23 +236,20 @@ app.get('/api/users/username/:userName', async (req, res) => {
     }
   });
   
-  // GET all cars for a specific userapp.get('/api/cars/user/:userName', async (req, res) => {
+  // GET all cars for a specific user
+app.get('/api/cars/user/:userName', async (req, res) => {
   const { userName } = req.params;
 
   try {
-    const user = await User.findOne({ userName });
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-
-    const cars = await Car.find({ userId: user._id });
+    const cars = await Car.find({ userName });
     res.status(200).json(cars);
   } catch (error) {
     console.error('❌ Error fetching cars:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
 // POST to add a new car
-aapp.post('/api/cars', async (req, res) => {
+app.post('/api/cars', async (req, res) => {
   const { plateNumber, carBrand, insuranceProvider, carModel, carType, userName } = req.body;
 
   try {
@@ -261,20 +258,18 @@ aapp.post('/api/cars', async (req, res) => {
       return res.status(400).json({ message: 'Plate number already registered.' });
     }
 
-    // ✅ Find user by userName
     const user = await User.findOne({ userName });
     if (!user) {
       return res.status(404).json({ message: 'User not found.' });
     }
 
-    // ✅ Create car with userId instead of userName
     const newCar = new Car({
       plateNumber,
       carBrand,
       insuranceProvider,
       carModel,
       carType,
-      userId: user._id, // 🔑 Important fix
+      userId: user._id, // Use userId, not userName
     });
 
     await newCar.save();
