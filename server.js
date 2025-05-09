@@ -264,7 +264,7 @@ app.post('/api/cars', async (req, res) => {
       insuranceProvider,
       carModel,
       carType,
-      userId,
+      userName,
     });
 
     await newCar.save();
