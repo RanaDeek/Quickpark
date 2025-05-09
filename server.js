@@ -237,17 +237,26 @@ app.get('/api/users/username/:userName', async (req, res) => {
   });
   
   // GET all cars for a specific user
-app.get('/api/cars/user/:userName', async (req, res) => {
-  const { userName } = req.params;
-
-  try {
-    const cars = await Car.find({ userName });
-    res.status(200).json(cars);
-  } catch (error) {
-    console.error('❌ Error fetching cars:', error);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
+  app.get('/api/cars/user/:userName', async (req, res) => {
+    const { userName } = req.params;
+  
+    try {
+      const user = await User.findOne({ userName });
+  
+      if (!user) {
+        return res.status(404).json({ message: 'User not found.' });
+      }
+  
+      // Assuming 'userId' or 'owner' field in the Car schema links to User._id
+      const cars = await Car.find({ userId: user._id });
+  
+      res.status(200).json(cars);
+    } catch (error) {
+      console.error('❌ Error fetching cars:', error);
+      res.status(500).json({ message: 'Server error.' });
+    }
+  });
+  
 // POST to add a new car
 app.post('/api/cars', async (req, res) => {
   const { plateNumber, carBrand, insuranceProvider, carModel, carType, userName } = req.body;
