@@ -235,6 +235,37 @@ app.get('/api/users/username/:userName', async (req, res) => {
       res.status(500).json({ message: 'Server error.' });
     }
   });
+  // Route to update user data by username
+app.put('/api/users/update/username/:userName', async (req, res) => {
+  const { userName } = req.params;
+  const { fullName, email } = req.body;
+
+  // Validate the input
+  if (!fullName || !email) {
+    return res.status(400).json({ message: 'Full Name and Email are required.' });
+  }
+
+  try {
+    // Find the user by username
+    const user = await User.findOne({ userName });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    // Update user information
+    user.fullName = fullName || user.fullName;
+    user.email = email || user.email;
+
+    // Save the updated user to the database
+    await user.save();
+
+    return res.status(200).json({ message: 'User updated successfully', user });
+  } catch (error) {
+    console.error('❌ Error updating user:', error);
+    return res.status(500).json({ message: 'Server error.' });
+  }
+});
   
   // GET all cars for a specific user
   app.get('/api/cars/user/:userName', async (req, res) => {
