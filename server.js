@@ -319,22 +319,45 @@ app.post('/api/cars', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+function haversine(lat1, lon1, lat2, lon2) {
+  const toRad = (x) => (x * Math.PI) / 180;
+
+  const R = 6371; // Radius of Earth in kilometers
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // distance in kilometers
+}
+
 app.post('/check-distance', (req, res) => {
-  const { lat, lon } = req.body;
-  const parkingLat = 31.963158;
-  const parkingLon = 35.930359;
+  try {
+    const { lat, lon } = req.body;
 
-  const distance = haversine(lat, lon, parkingLat, parkingLon); // in KM
-  const maxDistance = 0.1; // 100 meters
+    if (typeof lat !== 'number' || typeof lon !== 'number') {
+      return res.status(400).json({ error: 'Invalid or missing lat/lon values' });
+    }
 
-  if (distance <= maxDistance) {
-    res.json({ allowed: true });
-  } else {
-    res.json({ allowed: false });
+    const parkingLat = 31.963158;
+    const parkingLon = 35.930359;
+
+    const distance = haversine(lat, lon, parkingLat, parkingLon);
+    const maxDistance = 0.1; // 100 meters
+
+    if (distance <= maxDistance) {
+      res.json({ allowed: true });
+    } else {
+      res.json({ allowed: false });
+    }
+  } catch (err) {
+    console.error('❌ Error in /check-distance:', err);
+    res.status(500).json({ error: 'Internal Server Error', details: err.message });
   }
 });
-
-
 
   app.listen(PORT, () => {
     console.log(`🚀 Server running on port ${PORT}`);
