@@ -319,6 +319,21 @@ app.post('/api/cars', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+app.post('/check-distance', (req, res) => {
+  const { lat, lon } = req.body;
+  const parkingLat = 31.963158;
+  const parkingLon = 35.930359;
+
+  const distance = haversine(lat, lon, parkingLat, parkingLon); // in KM
+  const maxDistance = 0.1; // 100 meters
+
+  if (distance <= maxDistance) {
+    res.json({ allowed: true });
+  } else {
+    res.json({ allowed: false });
+  }
+});
+
 
 
   app.listen(PORT, () => {
