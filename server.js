@@ -279,6 +279,52 @@ app.post('/api/charge-user', async (req, res) => {
   }
 });
 
+// Get user wallet balance
+app.get('/api/wallet/:userName', async (req, res) => {
+  try {
+    const user = await User.findOne({ userName: req.params.userName }).select('wallet');
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+    res.status(200).json(user.wallet);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Deduct amount from user's wallet
+app.post('/api/wallet/deduct', async (req, res) => {
+  const { userName, amount } = req.body;
+
+  if (!userName || typeof amount !== 'number') {
+    return res.status(400).json({ message: 'Invalid request. Username and amount are required.' });
+  }
+
+  try {
+    const user = await User.findOne({ userName });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    if (user.wallet.balance < amount) {
+      return res.status(400).json({ message: 'Insufficient wallet balance.' });
+    }
+
+    user.wallet.balance -= amount;
+    user.wallet.lastUpdated = new Date();
+
+    await user.save();
+
+    res.status(200).json({
+      message: 'Amount deducted successfully.',
+      newBalance: user.wallet.balance
+    });
+  } catch (error) {
+    console.error('Error deducting amount:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
