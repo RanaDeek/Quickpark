@@ -300,14 +300,14 @@ app.post('/check-distance', (req, res) => {
 
 // Charge user wallet and log the charge
 app.post('/api/charge-user', async (req, res) => {
-  const { userName, amount, ownerId } = req.body;
+  const { userId, amount, ownerId } = req.body;
 
-  if (!userName || !amount || !ownerId) {
+  if (!userId || !amount || !ownerId) {
     return res.status(400).json({ message: 'Missing required fields.' });
   }
 
   try {
-    const user = await User.findOne({ userName });
+    const user = await User.findOne({ _id: userId }); // Assuming userId is MongoDB _id
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
     user.wallet.balance += amount;
@@ -318,16 +318,18 @@ app.post('/api/charge-user', async (req, res) => {
       userId: user._id,
       amount,
       ownerId,
-      note: `Owner ${ownerId} charged user ${userName}`,
+      note: `Owner ${ownerId} charged user ${userId}`,
     });
 
     await log.save();
 
     res.status(200).json({ message: 'Wallet charged and log saved.' });
-  } catch {
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
