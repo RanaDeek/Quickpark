@@ -23,12 +23,15 @@ mongoose.connect(mongoURI, {
 .then(() => console.log('✅ Connected to MongoDB Atlas'))
 .catch(err => console.error('❌ MongoDB Error:', err));
 
-// User Schema and Model
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
   email: { type: String, required: true, unique: true },
   userName: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  wallet: {
+    balance: { type: Number, default: 0 },
+    lastUpdated: { type: Date, default: Date.now }
+  }
 });
 
 const User = mongoose.model('User', userSchema);
