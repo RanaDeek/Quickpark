@@ -40,21 +40,12 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-const carSchema = new mongoose.Schema({
-  plateNumber: { type: String, required: true, unique: true },
-  carBrand: { type: String, required: true },
-  insuranceProvider: { type: String, required: true },
-  carModel: { type: String, required: true },
-  carType: { type: String, required: true },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-});
 
-const Car = mongoose.model('Car', carSchema);
 
 const chargeLogSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   amount: { type: Number, required: true },
-  ownerId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  ownerNumber: { type: String, required: true },  // change this to String
   timestamp: { type: Date, default: Date.now },
   note: String,
 });
@@ -225,45 +216,6 @@ app.put('/api/users/update/username/:userName', async (req, res) => {
     await user.save();
 
     res.status(200).json({ message: 'User updated successfully', user });
-  } catch {
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-// Get all cars for user
-app.get('/api/cars/user/:userName', async (req, res) => {
-  try {
-    const user = await User.findOne({ userName: req.params.userName });
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-
-    const cars = await Car.find({ userId: user._id });
-    res.status(200).json(cars);
-  } catch {
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-// Add new car
-app.post('/api/cars', async (req, res) => {
-  const { plateNumber, carBrand, insuranceProvider, carModel, carType, userName } = req.body;
-
-  try {
-    if (await Car.findOne({ plateNumber })) return res.status(400).json({ message: 'Plate number already registered.' });
-
-    const user = await User.findOne({ userName });
-    if (!user) return res.status(404).json({ message: 'User not found.' });
-
-    const newCar = new Car({
-      plateNumber,
-      carBrand,
-      insuranceProvider,
-      carModel,
-      carType,
-      userId: user._id,
-    });
-
-    await newCar.save();
-    res.status(201).json({ message: 'Car registered successfully.' });
   } catch {
     res.status(500).json({ message: 'Server error.' });
   }
