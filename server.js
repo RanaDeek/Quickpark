@@ -49,6 +49,15 @@ const chargeLogSchema = new mongoose.Schema({
 
 const ChargeLog = mongoose.model('ChargeLog', chargeLogSchema);
 
+const paymentSchema = new mongoose.Schema({
+  userName: String,
+  amount: Number,
+  description: String,
+  date: { type: Date, default: Date.now }
+});
+
+const Payment = mongoose.model('Payment', paymentSchema);
+
 // Utility function to send OTP email
 async function sendOTPEmail(email, otp) {
   const transporter = nodemailer.createTransport({
@@ -296,12 +305,12 @@ app.get('/api/wallet/:userName', async (req, res) => {
 });
 
 
-// Deduct amount from user's wallet
+// Deduct amount from user's wallet and log the payment
 app.post('/api/wallet/deduct', async (req, res) => {
-  const { userName, amount } = req.body;
+  const { userName, amount, description } = req.body;
 
-  if (!userName || typeof amount !== 'number') {
-    return res.status(400).json({ message: 'Invalid request. Username and amount are required.' });
+  if (!userName || typeof amount !== 'number' || !description) {
+    return res.status(400).json({ message: 'Username, amount, and description are required.' });
   }
 
   try {
@@ -315,21 +324,37 @@ app.post('/api/wallet/deduct', async (req, res) => {
       return res.status(400).json({ message: 'Insufficient wallet balance.' });
     }
 
+    // Deduct balance
     user.wallet.balance -= amount;
     user.wallet.lastUpdated = new Date();
-
     await user.save();
 
+    // Log payment
+    const payment = new Payment({
+      userName,
+      amount,
+      description
+    });
+    await payment.save();
+
     res.status(200).json({
-      message: 'Amount deducted successfully.',
+      message: 'Amount deducted and payment recorded successfully.',
       newBalance: user.wallet.balance
     });
   } catch (error) {
-    console.error('Error deducting amount:', error);
+    console.error('Error deducting amount and logging payment:', error);
     res.status(500).json({ message: 'Server error.' });
   }
 });
 
+app.get('/api/payments/:userName', async (req, res) => {
+  try {
+    const history = await Payment.find({ userName: req.params.userName }).sort({ date: -1 });
+    res.status(200).json(history);
+  } catch (err) {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
