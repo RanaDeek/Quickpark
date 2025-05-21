@@ -252,9 +252,9 @@ app.post('/check-distance', (req, res) => {
 
 // Charge user wallet and log the charge
 app.post('/api/charge-user', async (req, res) => {
-  const { userId, amount, ownerId } = req.body;
+  const { userId, amount, ownerNumber } = req.body;
 
-  if (!userId || !amount || !ownerId) {
+  if (!userId || !amount || !ownerNumber) {
     return res.status(400).json({ message: 'Missing required fields.' });
   }
 
@@ -269,8 +269,8 @@ app.post('/api/charge-user', async (req, res) => {
     const log = new ChargeLog({
       userId: user._id,
       amount,
-      ownerId,
-      note: `Owner ${ownerId} charged user ${userId}`,
+      ownerNumber,
+      note: `Owner ${ownerNumber} charged user ${userId}`,
     });
 
     await log.save();
