@@ -1,34 +1,31 @@
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
-require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-
-// Configure CORS to allow only your frontend origin
 app.use(cors({
-  origin: 'http://127.0.0.1:5500',  // <-- Allow this origin
+  origin: 'http://127.0.0.1:5500',
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
-
 app.use(express.json());
 
-// MongoDB Connection String (MongoDB Atlas)
-const mongoURI = process.env.MONGO_URI;
-
-mongoose.connect(mongoURI, {
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-  .then(() => console.log('✅ Connected to MongoDB Atlas'))
-  .catch(err => console.error('❌ MongoDB Error:', err));
+.then(() => console.log('✅ Connected to MongoDB Atlas'))
+.catch(err => console.error('❌ MongoDB Error:', err));
+
+// Schemas & Models
 
 const userSchema = new mongoose.Schema({
   fullName: { type: String, required: true },
@@ -37,13 +34,12 @@ const userSchema = new mongoose.Schema({
   password: { type: String, required: true },
   wallet: {
     balance: { type: Number, default: 0 },
-    lastUpdated: { type: Date, default: Date.now }
-  }
+    lastUpdated: { type: Date, default: Date.now },
+  },
 });
 
 const User = mongoose.model('User', userSchema);
 
-// Car Schema and Model
 const carSchema = new mongoose.Schema({
   plateNumber: { type: String, required: true, unique: true },
   carBrand: { type: String, required: true },
@@ -55,9 +51,18 @@ const carSchema = new mongoose.Schema({
 
 const Car = mongoose.model('Car', carSchema);
 
+const chargeLogSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  amount: { type: Number, required: true },
+  ownerId: { type: mongoose.Schema.Types.ObjectId, required: true },
+  timestamp: { type: Date, default: Date.now },
+  note: String,
+});
 
-// Send OTP Email
-const sendOTPEmail = async (email, otp) => {
+const ChargeLog = mongoose.model('ChargeLog', chargeLogSchema);
+
+// Utility function to send OTP email
+async function sendOTPEmail(email, otp) {
   const transporter = nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -74,70 +79,80 @@ const sendOTPEmail = async (email, otp) => {
   };
 
   await transporter.sendMail(mailOptions);
-};
+}
 
-// Request OTP
+// Routes
+
+// Request OTP for password reset
 app.post('/api/request-otp', async (req, res) => {
   const { email } = req.body;
   const user = await User.findOne({ email });
   if (!user) return res.status(404).json({ message: 'User not found.' });
 
-  const otp = Math.floor(100000 + Math.random() * 900000).toString(); // 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  // Sign OTP into a JWT (expires in 10 minutes)
   const otpToken = jwt.sign(
     { email, otp },
-    process.env.JWT_SECRET,  // Use the JWT secret
+    process.env.JWT_SECRET,
     { expiresIn: '10m' }
   );
 
-  await sendOTPEmail(email, otp); // Send OTP via email
+  await sendOTPEmail(email, otp);
 
-  return res.status(200).json({
+  res.status(200).json({
     message: 'OTP sent to your email.',
-    otpToken, // Send token to client
+    otpToken,
   });
 });
-app.post('/api/verify-otp', async (req, res) => {
+
+// Verify OTP
+app.post('/api/verify-otp', (req, res) => {
   const { otpToken, otp } = req.body;
 
   try {
-    // Verify the OTP token using JWT
     const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+    if (decoded.otp !== otp) return res.status(400).json({ message: 'Invalid OTP.' });
 
-    if (decoded.otp !== otp) {
-      return res.status(400).json({ message: 'Invalid OTP.' });
-    }
-
-    // OTP is valid
-    return res.status(200).json({
+    res.status(200).json({
       message: 'OTP verified successfully.',
-      email: decoded.email, // optional, if needed on client
-      verifiedToken: jwt.sign({ email: decoded.email }, process.env.JWT_SECRET, { expiresIn: '10m' })
+      email: decoded.email,
+      verifiedToken: jwt.sign({ email: decoded.email }, process.env.JWT_SECRET, { expiresIn: '10m' }),
     });
   } catch (error) {
-    console.error(error);
-    return res.status(400).json({ message: 'Invalid or expired token.' });
+    res.status(400).json({ message: 'Invalid or expired token.' });
   }
 });
 
-// POST endpoint to create a new user (User registration)
+// Reset password after OTP verified
+app.post('/api/reset-password', async (req, res) => {
+  const { otpToken, newPassword } = req.body;
+
+  try {
+    const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
+    const email = decoded.email;
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    const updateResult = await User.updateOne({ email }, { password: hashedPassword });
+
+    if (updateResult.modifiedCount === 0) {
+      return res.status(400).json({ message: 'Failed to update password.' });
+    }
+
+    res.status(200).json({ message: 'Password has been reset successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to reset password.' });
+  }
+});
+
+// User registration
 app.post('/api/users', async (req, res) => {
   const { fullName, email, userName, password } = req.body;
 
   try {
-    // Check if the user already exists
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      return res.status(400).json({ message: 'Email already in use.' });
-    }
+    if (await User.findOne({ email })) return res.status(400).json({ message: 'Email already in use.' });
+    if (await User.findOne({ userName })) return res.status(400).json({ message: 'Username already taken.' });
 
-    const existingUserName = await User.findOne({ userName });
-    if (existingUserName) {
-      return res.status(400).json({ message: 'Username already taken.' });
-    }
-
-    // Hash the password
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const newUser = new User({
@@ -145,48 +160,31 @@ app.post('/api/users', async (req, res) => {
       email,
       userName,
       password: hashedPassword,
-      wallet: {
-        balance: 0,
-        lastUpdated: new Date()
-      }
+      wallet: { balance: 0, lastUpdated: new Date() },
     });
 
-
-    // Save the user to the database
     await newUser.save();
 
-    return res.status(201).json({ message: 'User created successfully.' });
+    res.status(201).json({ message: 'User created successfully.' });
   } catch (error) {
-    console.error(error);
-    return res.status(500).json({ message: 'Server error.' });
+    res.status(500).json({ message: 'Server error.' });
   }
 });
 
+// User login
 app.post('/api/login', async (req, res) => {
+  const { userName, password } = req.body;
+
   try {
-    const { userName, password } = req.body;
+    if (!userName || !password) return res.status(400).json({ message: 'Username and password are required.' });
 
-    // 1. Validate input
-    if (!userName || !password) {
-      return res.status(400).json({ message: 'Username and password are required.' });
-    }
-
-    // 2. Find the user by userName
     const user = await User.findOne({ userName });
+    if (!user) return res.status(401).json({ message: 'Invalid credentials.' });
 
-    if (!user) {
-      return res.status(401).json({ message: 'Invalid credentials.' });
-    }
-
-    // 3. Compare input password with stored hashed password
     const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(401).json({ message: 'Invalid credentials.' });
 
-    if (!isMatch) {
-      return res.status(401).json({ message: 'Invalid credentials.' });
-    }
-
-    // 4. Login success (optionally, generate a token here)
-    return res.status(200).json({
+    res.status(200).json({
       message: 'Login successful.',
       user: {
         id: user._id,
@@ -195,127 +193,65 @@ app.post('/api/login', async (req, res) => {
         userName: user.userName,
       },
     });
-
-  } catch (error) {
-    console.error('❌ Error in /api/login:', error);
-    return res.status(500).json({ message: 'Server error.' });
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
   }
 });
-app.post('/api/reset-password', async (req, res) => {
-  const { otpToken, newPassword } = req.body;
 
-  try {
-    // 1. Decode the OTP token
-    const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
-    const email = decoded.email;
-
-    // 2. Log email and new password
-    console.log("Resetting password for:", email);
-    console.log("New password:", newPassword);
-
-    // 3. Hash the new password
-    const hashedPassword = await bcrypt.hash(newPassword, 10);
-    console.log("Hashed password:", hashedPassword);
-
-    // 4. Update user's password
-    const updateResult = await User.updateOne(
-      { email },
-      { $set: { password: hashedPassword } }
-    );
-
-    console.log("Update result:", updateResult);
-
-    if (updateResult.modifiedCount === 0) {
-      return res.status(400).json({ message: 'Failed to update password.' });
-    }
-
-    res.status(200).json({ message: 'Password has been reset successfully.' });
-  } catch (error) {
-    console.error("❌ Reset error:", error);
-    res.status(500).json({ message: 'Failed to reset password.' });
-  }
-});
-// GET user data by username
+// Get user by username (no password)
 app.get('/api/users/username/:userName', async (req, res) => {
-  const { userName } = req.params;
-
   try {
-    const user = await User.findOne({ userName }).select('-password');
+    const user = await User.findOne({ userName: req.params.userName }).select('-password');
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
     res.status(200).json(user);
-  } catch (error) {
-    console.error('❌ Error fetching user by username:', error);
+  } catch {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-// Route to update user data by username
+
+// Update user by username
 app.put('/api/users/update/username/:userName', async (req, res) => {
-  const { userName } = req.params;
   const { fullName, email } = req.body;
 
-  // Validate the input
-  if (!fullName || !email) {
-    return res.status(400).json({ message: 'Full Name and Email are required.' });
-  }
+  if (!fullName || !email) return res.status(400).json({ message: 'Full Name and Email are required.' });
 
   try {
-    // Find the user by username
-    const user = await User.findOne({ userName });
+    const user = await User.findOne({ userName: req.params.userName });
+    if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    // Update user information
-    user.fullName = fullName || user.fullName;
-    user.email = email || user.email;
-
-    // Save the updated user to the database
+    user.fullName = fullName;
+    user.email = email;
     await user.save();
 
-    return res.status(200).json({ message: 'User updated successfully', user });
-  } catch (error) {
-    console.error('❌ Error updating user:', error);
-    return res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-// GET all cars for a specific user
-app.get('/api/cars/user/:userName', async (req, res) => {
-  const { userName } = req.params;
-
-  try {
-    const user = await User.findOne({ userName });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    // Assuming 'userId' or 'owner' field in the Car schema links to User._id
-    const cars = await Car.find({ userId: user._id });
-
-    res.status(200).json(cars);
-  } catch (error) {
-    console.error('❌ Error fetching cars:', error);
+    res.status(200).json({ message: 'User updated successfully', user });
+  } catch {
     res.status(500).json({ message: 'Server error.' });
   }
 });
 
-// POST to add a new car
+// Get all cars for user
+app.get('/api/cars/user/:userName', async (req, res) => {
+  try {
+    const user = await User.findOne({ userName: req.params.userName });
+    if (!user) return res.status(404).json({ message: 'User not found.' });
+
+    const cars = await Car.find({ userId: user._id });
+    res.status(200).json(cars);
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Add new car
 app.post('/api/cars', async (req, res) => {
   const { plateNumber, carBrand, insuranceProvider, carModel, carType, userName } = req.body;
 
   try {
-    const existingCar = await Car.findOne({ plateNumber });
-    if (existingCar) {
-      return res.status(400).json({ message: 'Plate number already registered.' });
-    }
+    if (await Car.findOne({ plateNumber })) return res.status(400).json({ message: 'Plate number already registered.' });
 
     const user = await User.findOne({ userName });
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
+    if (!user) return res.status(404).json({ message: 'User not found.' });
 
     const newCar = new Car({
       plateNumber,
@@ -323,88 +259,75 @@ app.post('/api/cars', async (req, res) => {
       insuranceProvider,
       carModel,
       carType,
-      userId: user._id, // Use userId, not userName
+      userId: user._id,
     });
 
     await newCar.save();
     res.status(201).json({ message: 'Car registered successfully.' });
-  } catch (error) {
-    console.error('❌ Error registering car:', error);
+  } catch {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
+// Haversine formula for distance calculation
 function haversine(lat1, lon1, lat2, lon2) {
   const toRad = (x) => (x * Math.PI) / 180;
 
-  const R = 6371; // Radius of Earth in kilometers
+  const R = 6371; // km
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-    Math.sin(dLon / 2) * Math.sin(dLon / 2);
-
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2) ** 2;
   const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c; // distance in kilometers
+  return R * c;
 }
 
+// Check distance to fixed parking coordinates
 app.post('/check-distance', (req, res) => {
-  try {
-    const { lat, lon } = req.body;
+  const { lat, lon } = req.body;
 
-    if (typeof lat !== 'number' || typeof lon !== 'number') {
-      return res.status(400).json({ error: 'Invalid or missing lat/lon values' });
-    }
-
-    const parkingLat = 31.963158;
-    const parkingLon = 35.930359;
-
-    const distance = haversine(lat, lon, parkingLat, parkingLon);
-    const maxDistance = 0.1; // 100 meters
-
-    if (distance <= maxDistance) {
-      res.json({ allowed: true });
-    } else {
-      res.json({ allowed: false });
-    }
-  } catch (err) {
-    console.error('❌ Error in /check-distance:', err);
-    res.status(500).json({ error: 'Internal Server Error', details: err.message });
+  if (typeof lat !== 'number' || typeof lon !== 'number') {
+    return res.status(400).json({ error: 'Invalid or missing lat/lon values' });
   }
+
+  const parkingLat = 31.963158;
+  const parkingLon = 35.930359;
+
+  const distance = haversine(lat, lon, parkingLat, parkingLon);
+  const maxDistance = 0.1; // km = 100 meters
+
+  res.json({ allowed: distance <= maxDistance });
 });
 
-
+// Charge user wallet and log the charge
 app.post('/api/charge-user', async (req, res) => {
-  const { userId, amount } = req.body;
+  const { userName, amount, ownerId } = req.body;
 
-  if (!userId || amount == null) {
-    return res.status(400).json({ message: 'Missing fields' });
+  if (!userName || !amount || !ownerId) {
+    return res.status(400).json({ message: 'Missing required fields.' });
   }
 
   try {
-    if (!mongoose.Types.ObjectId.isValid(userId)) {
-      return res.status(400).json({ message: 'Invalid userId format' });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    if (!user.wallet) user.wallet = { balance: 0 };
+    const user = await User.findOne({ userName });
+    if (!user) return res.status(404).json({ message: 'User not found.' });
 
     user.wallet.balance += amount;
     user.wallet.lastUpdated = new Date();
-
     await user.save();
 
-    res.status(200).json({ message: `User ${userId} charged successfully.` });
-  } catch (err) {
-    console.error('Error charging user:', err);
-    res.status(500).json({ message: 'Server error' });
+    const log = new ChargeLog({
+      userId: user._id,
+      amount,
+      ownerId,
+      note: `Owner ${ownerId} charged user ${userName}`,
+    });
+
+    await log.save();
+
+    res.status(200).json({ message: 'Wallet charged and log saved.' });
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
   }
 });
-
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
