@@ -282,14 +282,19 @@ app.post('/api/charge-user', async (req, res) => {
 // Get user wallet balance
 app.get('/api/wallet/:userName', async (req, res) => {
   try {
-    const user = await User.findOne({ userName: req.params.userName }).select('wallet');
+    const user = await User.findOne({ userName: req.params.userName }).select('_id wallet');
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    res.status(200).json(user.wallet);
+    res.status(200).json({
+      userID: user._id,
+      balance: user.wallet.balance,
+      lastUpdated: user.wallet.lastUpdated
+    });
   } catch (err) {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 
 // Deduct amount from user's wallet
 app.post('/api/wallet/deduct', async (req, res) => {
