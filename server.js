@@ -366,6 +366,39 @@ app.post('/check-distance', (req, res) => {
   }
 });
 
+
+app.post('/api/charge-user', async (req, res) => {
+  const { userId, amount } = req.body;
+
+  if (!userId || amount == null) {
+    return res.status(400).json({ message: 'Missing fields' });
+  }
+
+  try {
+    if (!mongoose.Types.ObjectId.isValid(userId)) {
+      return res.status(400).json({ message: 'Invalid userId format' });
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    if (!user.wallet) user.wallet = { balance: 0 };
+
+    user.wallet.balance += amount;
+    user.wallet.lastUpdated = new Date();
+
+    await user.save();
+
+    res.status(200).json({ message: `User ${userId} charged successfully.` });
+  } catch (err) {
+    console.error('Error charging user:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
+
+
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
