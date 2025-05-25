@@ -5,6 +5,8 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
+const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -355,6 +357,45 @@ app.get('/api/payments/:userName', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+// Charge wallet from bank (virtual bank integration)
+app.post('/api/charge-bank', async (req, res) => {
+  const { userName, amount, transactionId } = req.body;
+
+  if (!userName || typeof amount !== 'number') {
+    return res.status(400).json({ message: 'Username and amount are required.' });
+  }
+
+  try {
+    const user = await User.findOne({ userName });
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    user.wallet.balance += amount;
+    user.wallet.lastUpdated = new Date();
+    await user.save();
+
+    // Log the bank top-up in the payments history
+    const payment = new Payment({
+      userName,
+      amount,
+      description: transactionId ? `Bank Top-Up (Transaction ID: ${transactionId})` : 'Bank Top-Up'
+    });
+
+    await payment.save();
+
+    res.status(200).json({
+      message: 'Wallet successfully charged from bank.',
+      newBalance: user.wallet.balance
+    });
+
+  } catch (error) {
+    console.error('Bank top-up error:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
