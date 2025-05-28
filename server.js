@@ -412,6 +412,17 @@ app.post('/api/charge-bank', async (req, res) => {
   }
 });
 
+//Get all parking slots
+app.get('/api/slots', async (req, res) => {
+  try {
+    const slots = await Slot.find().sort({ slotNumber: 1 }); // sort by slotNumber ascending
+    res.status(200).json(slots);
+
+  } catch (error) {
+    console.error('Error fetching slots:', error);
+    res.status(500).json({ message: 'Server error while fetching slots.' });
+  }
+});
 
 
 // POST a new command (from Flutter)
