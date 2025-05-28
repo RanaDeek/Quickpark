@@ -10,6 +10,7 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 typeof global.pendingCommands === 'undefined' && (global.pendingCommands = []);
 const pendingCommands = global.pendingCommands;
 
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -61,6 +62,19 @@ const paymentSchema = new mongoose.Schema({
 });
 
 const Payment = mongoose.model('Payment', paymentSchema);
+
+const slotSchema = new mongoose.Schema({
+  slotNumber: { type: Number, required: true, unique: true },
+  status: { type: String, enum: ['available', 'occupied', 'locked'], default: 'available' },
+  userName: { type: String, default: null },
+  lastUpdated: { type: Date, default: Date.now },
+  lockedBy: { type: String, default: null },
+  lockExpiresAt: { type: Date, default: null },
+
+
+});
+const Slot = mongoose.model('Slot', slotSchema);
+
 
 // Utility function to send OTP email
 async function sendOTPEmail(email, otp) {
@@ -398,9 +412,7 @@ app.post('/api/charge-bank', async (req, res) => {
   }
 });
 
-// ────────────────────────────────────────────────────────────────────────────
-// New ESP Command Queue Endpoints
-// ────────────────────────────────────────────────────────────────────────────
+─
 
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
@@ -417,6 +429,8 @@ app.get('/api/cmd/next', (req, res) => {
   }
   res.json(pendingCommands.shift());
 });
+
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
