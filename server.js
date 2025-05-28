@@ -7,13 +7,11 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors()); // allows any origin
-
+app.use(cors());
 app.use(express.json());
 
 // MongoDB Connection
@@ -39,12 +37,10 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-
-
 const chargeLogSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   amount: { type: Number, required: true },
-  ownerNumber: { type: String, required: true },  // change this to String
+  ownerNumber: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
   note: String,
 });
@@ -55,7 +51,7 @@ const paymentSchema = new mongoose.Schema({
   userName: String,
   amount: Number,
   description: String,
-  date: { type: Date, default: Date.now }
+  date: { type: Date, default: Date.now },
 });
 
 const Payment = mongoose.model('Payment', paymentSchema);
@@ -65,12 +61,11 @@ const parkingSlotSchema = new mongoose.Schema({
   status: { type: String, enum: ['available', 'occupied'], default: 'available' },
   userName: String,
   lastUpdated: Date,
-  lockedBy: String,        // userName who locked the slot temporarily
-  lockExpiresAt: Date,     // when the lock expires
+  lockedBy: String,
+  lockExpiresAt: Date,
 });
 
-
-module.exports = mongoose.model('ParkingSlot', parkingSlotSchema);
+const ParkingSlot = mongoose.model('ParkingSlot', parkingSlotSchema);
 
 // Utility function to send OTP email
 async function sendOTPEmail(email, otp) {
@@ -92,6 +87,35 @@ async function sendOTPEmail(email, otp) {
   await transporter.sendMail(mailOptions);
 }
 
+// Haversine formula for distance calculation
+function haversine(lat1, lon1, lat2, lon2) {
+  const toRad = (x) => (x * Math.PI) / 180;
+  const R = 6371; // km
+  const dLat = toRad(lat2 - lat1);
+  const dLon = toRad(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Middleware to clear expired locks before any parking slot API
+async function clearExpiredLocks(req, res, next) {
+  const now = new Date();
+  try {
+    const result = await ParkingSlot.updateMany(
+      { lockExpiresAt: { $lt: now } },
+      { $set: { lockedBy: null, lockExpiresAt: null } }
+    );
+    next();
+  } catch (err) {
+    console.error('Error clearing expired locks:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// Routes
 
 // Request OTP for password reset
 app.post('/api/request-otp', async (req, res) => {
@@ -101,32 +125,36 @@ app.post('/api/request-otp', async (req, res) => {
 
   const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-  const otpToken = jwt.sign(
-    { email, otp },
-    process.env.JWT_SECRET,
-    { expiresIn: '10m' }
-  );
-
-  await sendOTPEmail(email, otp);
-
-  res.status(200).json({
-    message: 'OTP sent to your email.',
-    otpToken,
+  const otpToken = jwt.sign({ email, otp }, process.env.JWT_SECRET, {
+    expiresIn: '10m',
   });
+
+  try {
+    await sendOTPEmail(email, otp);
+    res.status(200).json({
+      message: 'OTP sent to your email.',
+      otpToken,
+    });
+  } catch (error) {
+    console.error('Error sending OTP email:', error);
+    res.status(500).json({ message: 'Failed to send OTP email.' });
+  }
 });
 
 // Verify OTP
 app.post('/api/verify-otp', (req, res) => {
   const { otpToken, otp } = req.body;
-
   try {
     const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
-    if (decoded.otp !== otp) return res.status(400).json({ message: 'Invalid OTP.' });
+    if (decoded.otp !== otp)
+      return res.status(400).json({ message: 'Invalid OTP.' });
 
     res.status(200).json({
       message: 'OTP verified successfully.',
       email: decoded.email,
-      verifiedToken: jwt.sign({ email: decoded.email }, process.env.JWT_SECRET, { expiresIn: '10m' }),
+      verifiedToken: jwt.sign({ email: decoded.email }, process.env.JWT_SECRET, {
+        expiresIn: '10m',
+      }),
     });
   } catch (error) {
     res.status(400).json({ message: 'Invalid or expired token.' });
@@ -136,19 +164,15 @@ app.post('/api/verify-otp', (req, res) => {
 // Reset password after OTP verified
 app.post('/api/reset-password', async (req, res) => {
   const { otpToken, newPassword } = req.body;
-
   try {
     const decoded = jwt.verify(otpToken, process.env.JWT_SECRET);
     const email = decoded.email;
-
     const hashedPassword = await bcrypt.hash(newPassword, 10);
-
     const updateResult = await User.updateOne({ email }, { password: hashedPassword });
 
     if (updateResult.modifiedCount === 0) {
       return res.status(400).json({ message: 'Failed to update password.' });
     }
-
     res.status(200).json({ message: 'Password has been reset successfully.' });
   } catch (error) {
     res.status(500).json({ message: 'Failed to reset password.' });
@@ -158,10 +182,11 @@ app.post('/api/reset-password', async (req, res) => {
 // User registration
 app.post('/api/users', async (req, res) => {
   const { fullName, email, userName, password } = req.body;
-
   try {
-    if (await User.findOne({ email })) return res.status(400).json({ message: 'Email already in use.' });
-    if (await User.findOne({ userName })) return res.status(400).json({ message: 'Username already taken.' });
+    if (await User.findOne({ email }))
+      return res.status(400).json({ message: 'Email already in use.' });
+    if (await User.findOne({ userName }))
+      return res.status(400).json({ message: 'Username already taken.' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
@@ -184,9 +209,9 @@ app.post('/api/users', async (req, res) => {
 // User login
 app.post('/api/login', async (req, res) => {
   const { userName, password } = req.body;
-
   try {
-    if (!userName || !password) return res.status(400).json({ message: 'Username and password are required.' });
+    if (!userName || !password)
+      return res.status(400).json({ message: 'Username and password are required.' });
 
     const user = await User.findOne({ userName });
     if (!user) return res.status(401).json({ message: 'Invalid credentials.' });
@@ -224,7 +249,8 @@ app.get('/api/users/username/:userName', async (req, res) => {
 app.put('/api/users/update/username/:userName', async (req, res) => {
   const { fullName, email } = req.body;
 
-  if (!fullName || !email) return res.status(400).json({ message: 'Full Name and Email are required.' });
+  if (!fullName || !email)
+    return res.status(400).json({ message: 'Full Name and Email are required.' });
 
   try {
     const user = await User.findOne({ userName: req.params.userName });
@@ -240,343 +266,165 @@ app.put('/api/users/update/username/:userName', async (req, res) => {
   }
 });
 
-// Haversine formula for distance calculation
-function haversine(lat1, lon1, lat2, lon2) {
-  const toRad = (x) => (x * Math.PI) / 180;
+// Wallet charge route
+app.post('/api/wallet/charge', async (req, res) => {
+  const { userName, amount, ownerNumber } = req.body;
 
-  const R = 6371; // km
-  const dLat = toRad(lat2 - lat1);
-  const dLon = toRad(lon2 - lon1);
-  const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2) ** 2;
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-// Check distance to fixed parking coordinates
-app.post('/check-distance', (req, res) => {
-  const { lat, lon } = req.body;
-
-  if (typeof lat !== 'number' || typeof lon !== 'number') {
-    return res.status(400).json({ error: 'Invalid or missing lat/lon values' });
-  }
-
-  const parkingLat = 31.963158;
-  const parkingLon = 35.930359;
-
-  const distance = haversine(lat, lon, parkingLat, parkingLon);
-  const maxDistance = 0.1; // km = 100 meters
-
-  res.json({ allowed: distance <= maxDistance });
-});
-
-// Charge user wallet and log the charge
-app.post('/api/charge-user', async (req, res) => {
-  const { userId, amount, ownerNumber } = req.body;
-
-  if (!userId || !amount || !ownerNumber) {
-    return res.status(400).json({ message: 'Missing required fields.' });
-  }
+  if (!userName || !amount || !ownerNumber)
+    return res.status(400).json({ message: 'userName, amount, and ownerNumber are required.' });
 
   try {
-    const user = await User.findOne({ _id: userId }); // Assuming userId is MongoDB _id
+    const user = await User.findOne({ userName });
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    user.wallet.balance += amount;
+    user.wallet.balance += Number(amount);
     user.wallet.lastUpdated = new Date();
+
     await user.save();
 
-    const log = new ChargeLog({
+    // Log the charge
+    const chargeLog = new ChargeLog({
       userId: user._id,
-      amount,
+      amount: Number(amount),
       ownerNumber,
-      note: `Owner ${ownerNumber} charged user ${userId}`,
+      note: `Wallet charged by owner ${ownerNumber}`,
     });
+    await chargeLog.save();
 
-    await log.save();
-
-    res.status(200).json({ message: 'Wallet charged and log saved.' });
-  } catch (error) {
-    console.error(error);
+    res.status(200).json({ message: 'Wallet charged successfully.', wallet: user.wallet });
+  } catch {
     res.status(500).json({ message: 'Server error.' });
   }
 });
 
-// Get user wallet balance
-app.get('/api/wallet/:userName', async (req, res) => {
-  try {
-    const user = await User.findOne({ userName: req.params.userName }).select('_id wallet');
-    if (!user) return res.status(404).json({ message: 'User not found.' });
+// Stripe payment route
+app.post('/api/payment', async (req, res) => {
+  const { amount, currency, paymentMethodId, userName, description } = req.body;
 
-    res.status(200).json({
-      userID: user._id,
-      balance: user.wallet.balance,
-      lastUpdated: user.wallet.lastUpdated
+  if (!amount || !currency || !paymentMethodId)
+    return res.status(400).json({ message: 'amount, currency, and paymentMethodId are required.' });
+
+  try {
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // cents
+      currency,
+      payment_method: paymentMethodId,
+      confirm: true,
     });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-// Deduct amount from user's wallet and log the payment
-app.post('/api/wallet/deduct', async (req, res) => {
-  const { userName, amount, description } = req.body;
 
-  if (!userName || typeof amount !== 'number' || !description) {
-    return res.status(400).json({ message: 'Username, amount, and description are required.' });
-  }
-
-  try {
-    const user = await User.findOne({ userName });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    if (user.wallet.balance < amount) {
-      return res.status(400).json({ message: 'Insufficient wallet balance.' });
-    }
-
-    // Deduct balance
-    user.wallet.balance -= amount;
-    user.wallet.lastUpdated = new Date();
-    await user.save();
-
-    // Log payment
+    // Save payment info in DB
     const payment = new Payment({
       userName,
       amount,
-      description
-    });
-    await payment.save();
-
-    res.status(200).json({
-      message: 'Amount deducted and payment recorded successfully.',
-      newBalance: user.wallet.balance
-    });
-  } catch (error) {
-    console.error('Error deducting amount and logging payment:', error);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-app.get('/api/payments/:userName', async (req, res) => {
-  try {
-    const history = await Payment.find({ userName: req.params.userName }).sort({ date: -1 });
-    res.status(200).json(history);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-// Charge wallet from bank (virtual bank integration)
-app.post('/api/charge-bank', async (req, res) => {
-  const { userName, amount, transactionId } = req.body;
-
-  if (!userName || typeof amount !== 'number') {
-    return res.status(400).json({ message: 'Username and amount are required.' });
-  }
-
-  try {
-    const user = await User.findOne({ userName });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    user.wallet.balance += amount;
-    user.wallet.lastUpdated = new Date();
-    await user.save();
-
-    // Log the bank top-up in the payments history
-    const payment = new Payment({
-      userName,
-      amount,
-      description: transactionId ? `Bank Top-Up (Transaction ID: ${transactionId})` : 'Bank Top-Up'
+      description,
+      date: new Date(),
     });
 
     await payment.save();
 
-    res.status(200).json({
-      message: 'Wallet successfully charged from bank.',
-      newBalance: user.wallet.balance
-    });
-
+    res.status(200).json({ message: 'Payment successful.', paymentIntent });
   } catch (error) {
-    console.error('Bank top-up error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    console.error('Stripe payment error:', error);
+    res.status(500).json({ message: 'Payment failed.' });
   }
 });
 
-// Middleware to clear expired locks before processing any /api/slots request
-async function clearExpiredLocks(req, res, next) {
-  const now = new Date();
-  try {
-    console.log("Clearing expired locks...");
-    const result = await ParkingSlot.updateMany(
-      { lockExpiresAt: { $lt: now } },
-      { $set: { lockedBy: null, lockExpiresAt: null } }
-    );
-    console.log(`Expired locks cleared: ${result.modifiedCount}`);
-    next();
-  } catch (err) {
-    console.error('Error clearing expired locks:', err);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-}
+// Parking slots API
 
+// Use middleware to clear expired locks for /api/slots routes
+app.use('/api/slots', clearExpiredLocks);
+
+// Get all slots
 app.get('/api/slots', async (req, res) => {
   try {
-    console.log("Fetching parking slots...");
-    const filter = {};
-    if (req.query.status) {
-      if (['available', 'occupied'].includes(req.query.status)) {
-        filter.status = req.query.status;
-      } else {
-        return res.status(400).json({ error: 'Invalid status filter' });
-      }
-    }
-    const slots = await ParkingSlot.find(filter).sort({ slotNumber: 1 });
-    console.log(`Slots fetched: ${slots.length}`);
-    res.status(200).json(slots);
-  } catch (error) {
-    console.error('Error retrieving slots:', error);
-    res.status(500).json({ message: 'Server error retrieving slots', error: error.message });
+    const slots = await ParkingSlot.find();
+    res.json(slots);
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// PUT /api/slots/:slotNumber/status
-app.put('/api/slots/:slotNumber/status', validateSlotNumber, async (req, res) => {
-  const { status, userName } = req.body;
-  const slotNumber = req.slotNumber;
+// Lock a slot temporarily
+app.post('/api/slots/lock', async (req, res) => {
+  const { slotNumber, userName, lockDurationMinutes } = req.body;
 
-  if (!['available', 'occupied'].includes(status)) {
-    return res.status(400).json({ error: 'Invalid status value' });
+  if (!slotNumber || !userName) {
+    return res.status(400).json({ error: 'slotNumber and userName are required.' });
   }
-  if (status === 'occupied' && !userName) {
-    return res.status(400).json({ error: 'userName required when status is occupied' });
+
+  try {
+    const now = new Date();
+    const lockExpiresAt = new Date(now.getTime() + (lockDurationMinutes || 5) * 60000);
+
+    const slot = await ParkingSlot.findOne({ slotNumber });
+    if (!slot) return res.status(404).json({ error: 'Slot not found.' });
+
+    if (slot.lockedBy && slot.lockExpiresAt > now) {
+      return res.status(409).json({ error: 'Slot is already locked by another user.' });
+    }
+
+    slot.lockedBy = userName;
+    slot.lockExpiresAt = lockExpiresAt;
+    await slot.save();
+
+    res.json({ message: 'Slot locked successfully.', slot });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Unlock a slot
+app.post('/api/slots/unlock', async (req, res) => {
+  const { slotNumber, userName } = req.body;
+
+  if (!slotNumber || !userName) {
+    return res.status(400).json({ error: 'slotNumber and userName are required.' });
   }
 
   try {
     const slot = await ParkingSlot.findOne({ slotNumber });
-    if (!slot) return res.status(404).json({ error: 'Slot not found' });
+    if (!slot) return res.status(404).json({ error: 'Slot not found.' });
 
-    if (status === 'occupied' && slot.status === 'occupied') {
-      return res.status(409).json({ error: 'Slot already occupied' });
+    if (slot.lockedBy !== userName) {
+      return res.status(403).json({ error: 'You do not hold the lock on this slot.' });
     }
+
+    slot.lockedBy = null;
+    slot.lockExpiresAt = null;
+    await slot.save();
+
+    res.json({ message: 'Slot unlocked successfully.', slot });
+  } catch (err) {
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// Update parking slot status (occupied/available)
+app.put('/api/slots/:slotNumber/status', async (req, res) => {
+  const { slotNumber } = req.params;
+  const { status, userName } = req.body;
+
+  if (!['available', 'occupied'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value.' });
+  }
+
+  try {
+    const slot = await ParkingSlot.findOne({ slotNumber });
+    if (!slot) return res.status(404).json({ error: 'Slot not found.' });
 
     slot.status = status;
     slot.userName = status === 'occupied' ? userName : null;
     slot.lastUpdated = new Date();
 
     await slot.save();
-    res.json(slot);
+
+    res.json({ message: 'Slot status updated.', slot });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: 'Server error' });
   }
 });
 
-// POST /api/slots/:slotNumber/select
-app.post('/api/slots/:slotNumber/select', validateSlotNumber, async (req, res) => {
-  const { userName } = req.body;
-  const slotNumber = req.slotNumber;
-
-  if (!userName || typeof userName !== 'string') {
-    return res.status(400).json({ error: 'Invalid or missing userName' });
-  }
-
-  const now = new Date();
-  const lockDurationMs = 2 * 60 * 1000; // 2 minutes lock duration
-
-  try {
-    const slot = await ParkingSlot.findOne({ slotNumber });
-    if (!slot) {
-      return res.status(404).json({ message: 'Slot not found.' });
-    }
-
-    // Check if slot is locked and lock hasn't expired
-    if (slot.lockedBy && slot.lockExpiresAt && slot.lockExpiresAt > now) {
-      if (slot.lockedBy === userName) {
-        // Already locked by this user - extend the lock
-        slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
-        await slot.save();
-        return res.status(200).json({ message: 'Lock extended.', slot });
-      } else {
-        return res.status(409).json({ message: 'Slot is currently locked by another user.' });
-      }
-    }
-
-    // Lock the slot for this user
-    slot.lockedBy = userName;
-    slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
-    await slot.save();
-
-    res.status(200).json({ message: 'Slot locked successfully.', slot });
-  } catch (error) {
-    console.error('Error locking slot:', error);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-// PUT /api/slots/:slotNumber/confirm
-app.put('/api/slots/:slotNumber/confirm', validateSlotNumber, async (req, res) => {
-  const { userName } = req.body;
-  const slotNumber = req.slotNumber;
-
-  if (!userName || typeof userName !== 'string') {
-    return res.status(400).json({ error: 'Invalid or missing userName' });
-  }
-
-  const now = new Date();
-
-  try {
-    const slot = await ParkingSlot.findOne({ slotNumber });
-    if (!slot) return res.status(404).json({ error: 'Slot not found' });
-
-    // Check if slot locked by this user and lock still valid
-    if (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now) {
-      return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
-    }
-
-    // Occupy the slot
-    slot.status = 'occupied';
-    slot.userName = userName;
-    slot.lockedBy = null;
-    slot.lockExpiresAt = null;
-    slot.lastUpdated = now;
-
-    await slot.save();
-
-    res.json({ message: 'Slot booked successfully', slot });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// POST /api/slots/:slotNumber/cancel
-app.post('/api/slots/:slotNumber/cancel', validateSlotNumber, async (req, res) => {
-  const { userName } = req.body;
-  const slotNumber = req.slotNumber;
-
-  if (!userName || typeof userName !== 'string') {
-    return res.status(400).json({ error: 'Invalid or missing userName' });
-  }
-
-  try {
-    const slot = await ParkingSlot.findOne({ slotNumber });
-    if (!slot) return res.status(404).json({ error: 'Slot not found' });
-
-    if (slot.lockedBy !== userName) {
-      return res.status(403).json({ error: 'You do not hold the lock' });
-    }
-
-    slot.lockedBy = null;
-    slot.lockExpiresAt = null;
-    await slot.save();
-
-    res.json({ message: 'Lock released' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
+// Start server
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
