@@ -405,12 +405,65 @@ app.post('/api/charge-bank', async (req, res) => {
   }
 });
 
-// GET /api/slots/:slotNumber/status
-app.put('/api/slots/:slotNumber/status', async (req, res) => {
-  const { status, userName } = req.body;
+// Middleware to clear expired locks before processing any /api/slots request
+async function clearExpiredLocks(req, res, next) {
+  const now = new Date();
+  try {
+    await ParkingSlot.updateMany(
+      { lockExpiresAt: { $lt: now } },
+      { $set: { lockedBy: null, lockExpiresAt: null } }
+    );
+    next();
+  } catch (err) {
+    console.error('Error clearing expired locks:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+app.use('/api/slots', clearExpiredLocks);
+
+// Helper middleware to validate and parse slotNumber param
+function validateSlotNumber(req, res, next) {
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+  if (isNaN(slotNumber)) {
+    return res.status(400).json({ error: 'Invalid slotNumber parameter' });
+  }
+  req.slotNumber = slotNumber;
+  next();
+}
+
+// GET /api/slots?status=available (optional filter)
+app.get('/api/slots', async (req, res) => {
+  const filter = {};
+  if (req.query.status) {
+    if (['available', 'occupied'].includes(req.query.status)) {
+      filter.status = req.query.status;
+    } else {
+      return res.status(400).json({ error: 'Invalid status filter' });
+    }
+  }
 
   try {
-    const slot = await ParkingSlot.findOne({ slotNumber: req.params.slotNumber });
+    const slots = await ParkingSlot.find(filter).sort({ slotNumber: 1 });
+    res.status(200).json(slots);
+  } catch (error) {
+    res.status(500).json({ message: 'Server error retrieving slots', error: error.message });
+  }
+});
+
+// PUT /api/slots/:slotNumber/status
+app.put('/api/slots/:slotNumber/status', validateSlotNumber, async (req, res) => {
+  const { status, userName } = req.body;
+  const slotNumber = req.slotNumber;
+
+  if (!['available', 'occupied'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value' });
+  }
+  if (status === 'occupied' && !userName) {
+    return res.status(400).json({ error: 'userName required when status is occupied' });
+  }
+
+  try {
+    const slot = await ParkingSlot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
     if (status === 'occupied' && slot.status === 'occupied') {
@@ -419,26 +472,29 @@ app.put('/api/slots/:slotNumber/status', async (req, res) => {
 
     slot.status = status;
     slot.userName = status === 'occupied' ? userName : null;
-    slot.lastUpdated = Date.now();
+    slot.lastUpdated = new Date();
 
     await slot.save();
     res.json(slot);
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.post('/api/slots/:slotNumber/select', async (req, res) => {
+// POST /api/slots/:slotNumber/select
+app.post('/api/slots/:slotNumber/select', validateSlotNumber, async (req, res) => {
   const { userName } = req.body;
-  const slotNumber = parseInt(req.params.slotNumber, 10);
+  const slotNumber = req.slotNumber;
+
+  if (!userName || typeof userName !== 'string') {
+    return res.status(400).json({ error: 'Invalid or missing userName' });
+  }
 
   const now = new Date();
   const lockDurationMs = 2 * 60 * 1000; // 2 minutes lock duration
 
   try {
     const slot = await ParkingSlot.findOne({ slotNumber });
-
     if (!slot) {
       return res.status(404).json({ message: 'Slot not found.' });
     }
@@ -467,9 +523,14 @@ app.post('/api/slots/:slotNumber/select', async (req, res) => {
   }
 });
 
-app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
+// PUT /api/slots/:slotNumber/confirm
+app.put('/api/slots/:slotNumber/confirm', validateSlotNumber, async (req, res) => {
   const { userName } = req.body;
-  const slotNumber = req.params.slotNumber;
+  const slotNumber = req.slotNumber;
+
+  if (!userName || typeof userName !== 'string') {
+    return res.status(400).json({ error: 'Invalid or missing userName' });
+  }
 
   const now = new Date();
 
@@ -492,14 +553,19 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     await slot.save();
 
     res.json({ message: 'Slot booked successfully', slot });
-
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
-app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
+
+// POST /api/slots/:slotNumber/cancel
+app.post('/api/slots/:slotNumber/cancel', validateSlotNumber, async (req, res) => {
   const { userName } = req.body;
-  const slotNumber = req.params.slotNumber;
+  const slotNumber = req.slotNumber;
+
+  if (!userName || typeof userName !== 'string') {
+    return res.status(400).json({ error: 'Invalid or missing userName' });
+  }
 
   try {
     const slot = await ParkingSlot.findOne({ slotNumber });
