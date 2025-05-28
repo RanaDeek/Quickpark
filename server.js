@@ -60,6 +60,18 @@ const paymentSchema = new mongoose.Schema({
 
 const Payment = mongoose.model('Payment', paymentSchema);
 
+const parkingSlotSchema = new mongoose.Schema({
+  slotNumber: Number,
+  status: { type: String, enum: ['available', 'occupied'], default: 'available' },
+  userName: String,
+  lastUpdated: Date,
+  lockedBy: String,        // userName who locked the slot temporarily
+  lockExpiresAt: Date,     // when the lock expires
+});
+
+
+module.exports = mongoose.model('ParkingSlot', parkingSlotSchema);
+
 // Utility function to send OTP email
 async function sendOTPEmail(email, otp) {
   const transporter = nodemailer.createTransport({
@@ -80,7 +92,6 @@ async function sendOTPEmail(email, otp) {
   await transporter.sendMail(mailOptions);
 }
 
-// Routes
 
 // Request OTP for password reset
 app.post('/api/request-otp', async (req, res) => {
@@ -305,8 +316,6 @@ app.get('/api/wallet/:userName', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
-
 // Deduct amount from user's wallet and log the payment
 app.post('/api/wallet/deduct', async (req, res) => {
   const { userName, amount, description } = req.body;
@@ -396,6 +405,119 @@ app.post('/api/charge-bank', async (req, res) => {
   }
 });
 
+// GET /api/slots/:slotNumber/status
+app.put('/api/slots/:slotNumber/status', async (req, res) => {
+  const { status, userName } = req.body;
+
+  try {
+    const slot = await ParkingSlot.findOne({ slotNumber: req.params.slotNumber });
+    if (!slot) return res.status(404).json({ error: 'Slot not found' });
+
+    if (status === 'occupied' && slot.status === 'occupied') {
+      return res.status(409).json({ error: 'Slot already occupied' });
+    }
+
+    slot.status = status;
+    slot.userName = status === 'occupied' ? userName : null;
+    slot.lastUpdated = Date.now();
+
+    await slot.save();
+    res.json(slot);
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/slots/:slotNumber/select', async (req, res) => {
+  const { userName } = req.body;
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+
+  const now = new Date();
+  const lockDurationMs = 2 * 60 * 1000; // 2 minutes lock duration
+
+  try {
+    const slot = await ParkingSlot.findOne({ slotNumber });
+
+    if (!slot) {
+      return res.status(404).json({ message: 'Slot not found.' });
+    }
+
+    // Check if slot is locked and lock hasn't expired
+    if (slot.lockedBy && slot.lockExpiresAt && slot.lockExpiresAt > now) {
+      if (slot.lockedBy === userName) {
+        // Already locked by this user - extend the lock
+        slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
+        await slot.save();
+        return res.status(200).json({ message: 'Lock extended.', slot });
+      } else {
+        return res.status(409).json({ message: 'Slot is currently locked by another user.' });
+      }
+    }
+
+    // Lock the slot for this user
+    slot.lockedBy = userName;
+    slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
+    await slot.save();
+
+    res.status(200).json({ message: 'Slot locked successfully.', slot });
+  } catch (error) {
+    console.error('Error locking slot:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
+  const { userName } = req.body;
+  const slotNumber = req.params.slotNumber;
+
+  const now = new Date();
+
+  try {
+    const slot = await ParkingSlot.findOne({ slotNumber });
+    if (!slot) return res.status(404).json({ error: 'Slot not found' });
+
+    // Check if slot locked by this user and lock still valid
+    if (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now) {
+      return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
+    }
+
+    // Occupy the slot
+    slot.status = 'occupied';
+    slot.userName = userName;
+    slot.lockedBy = null;
+    slot.lockExpiresAt = null;
+    slot.lastUpdated = now;
+
+    await slot.save();
+
+    res.json({ message: 'Slot booked successfully', slot });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
+  const { userName } = req.body;
+  const slotNumber = req.params.slotNumber;
+
+  try {
+    const slot = await ParkingSlot.findOne({ slotNumber });
+    if (!slot) return res.status(404).json({ error: 'Slot not found' });
+
+    if (slot.lockedBy !== userName) {
+      return res.status(403).json({ error: 'You do not hold the lock' });
+    }
+
+    slot.lockedBy = null;
+    slot.lockExpiresAt = null;
+    await slot.save();
+
+    res.json({ message: 'Lock released' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
