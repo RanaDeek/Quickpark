@@ -333,14 +333,25 @@ app.post('/api/payment', async (req, res) => {
 
 // Use middleware to clear expired locks for /api/slots routes
 app.use('/api/slots', clearExpiredLocks);
-
-// Get all slots
 app.get('/api/slots', async (req, res) => {
   try {
-    const slots = await ParkingSlot.find();
-    res.json(slots);
-  } catch (err) {
-    res.status(500).json({ error: 'Server error' });
+    const slots = await ParkingSlot.find().lean();
+
+    // You can normalize the response here, if needed:
+    const normalizedSlots = slots.map(slot => ({
+      _id: slot._id,
+      slotNumber: slot.slotNumber,
+      status: slot.status,
+      userName: slot.userName ?? null,       // explicitly null if undefined
+      lockedBy: slot.lockedBy ?? null,
+      lockExpiresAt: slot.lockExpiresAt ? slot.lockExpiresAt.toISOString() : null,
+      lastUpdated: slot.lastUpdated ? slot.lastUpdated.toISOString() : null,
+    }));
+
+    res.json(normalizedSlots);
+  } catch (error) {
+    console.error('Error fetching slots:', error);
+    res.status(500).json({ error: 'Failed to fetch slots' });
   }
 });
 
