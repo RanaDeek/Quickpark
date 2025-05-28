@@ -424,7 +424,56 @@ app.get('/api/slots', async (req, res) => {
   }
 });
 
+// Update a slot’s status in the database
+app.put('/api/slots/:slotNumber', async (req, res) => {
+  const { slotNumber } = req.params;
+  const { status, lockedBy, lockExpiresAt } = req.body;
+  try {
+    const slot = await Slot.findOneAndUpdate(
+      { slotNumber: parseInt(slotNumber) },
+      {
+        status,
+        lockedBy: lockedBy || null,
+        lockExpiresAt: lockExpiresAt || null,
+        lastUpdated: new Date()
+      },
+      { new: true }
+    );
+    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
+    res.json(slot);
+  } catch (err) {
+    console.error('Error updating slot:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+app.get('/api/get-balances', async (req, res) => {
+  const ownerNumber = req.query.ownerNumber;
 
+  if (!ownerNumber) {
+    return res.status(400).json({ message: 'Missing ownerNumber parameter' });
+  }
+
+  try {
+    // Find all users with the matching ownerTelephone
+    const users = await User.find({ ownerTelephone: ownerNumber });
+
+    if (!users || users.length === 0) {
+      return res.status(404).json({ message: 'No users found for this ownerNumber' });
+    }
+
+    // Extract balances from found users
+    const amounts = users.map(user => user.balance || 0);
+
+    // Sum all balances
+    const total = amounts.reduce((acc, val) => acc + val, 0);
+
+    // Respond with total and amounts array (optional)
+    res.json({ total, amounts });
+  } catch (error) {
+    console.error('Error fetching balances:', error);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
   const { cmd, slot, pin, duration } = req.body;
