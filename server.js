@@ -7,13 +7,11 @@ const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 
-
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
 app.use(cors()); // allows any origin
-
 app.use(express.json());
 
 // MongoDB Connection
@@ -39,12 +37,10 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.model('User', userSchema);
 
-
-
 const chargeLogSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   amount: { type: Number, required: true },
-  ownerNumber: { type: String, required: true },  // change this to String
+  ownerNumber: { type: String, required: true },
   timestamp: { type: Date, default: Date.now },
   note: String,
 });
@@ -65,12 +61,11 @@ const parkingSlotSchema = new mongoose.Schema({
   status: { type: String, enum: ['available', 'occupied'], default: 'available' },
   userName: String,
   lastUpdated: Date,
-  lockedBy: String,        // userName who locked the slot temporarily
-  lockExpiresAt: Date,     // when the lock expires
+  lockedBy: String,
+  lockExpiresAt: Date,
 });
 
-
-module.exports = mongoose.model('ParkingSlot', parkingSlotSchema);
+const ParkingSlot = mongoose.model('ParkingSlot', parkingSlotSchema);
 
 // Utility function to send OTP email
 async function sendOTPEmail(email, otp) {
@@ -92,6 +87,21 @@ async function sendOTPEmail(email, otp) {
   await transporter.sendMail(mailOptions);
 }
 
+// Middleware to clear expired locks on parking slots
+async function clearExpiredLocks(req, res, next) {
+  try {
+    const now = new Date();
+    await ParkingSlot.updateMany(
+      { lockExpiresAt: { $lte: now } },
+      { $set: { lockedBy: null, lockExpiresAt: null } }
+    );
+    next();
+  } catch (err) {
+    console.error('Error clearing expired locks:', err);
+    next();
+  }
+}
+
 // Routes
 
 // Request OTP for password reset
@@ -108,12 +118,16 @@ app.post('/api/request-otp', async (req, res) => {
     { expiresIn: '10m' }
   );
 
-  await sendOTPEmail(email, otp);
-
-  res.status(200).json({
-    message: 'OTP sent to your email.',
-    otpToken,
-  });
+  try {
+    await sendOTPEmail(email, otp);
+    res.status(200).json({
+      message: 'OTP sent to your email.',
+      otpToken,
+    });
+  } catch (error) {
+    console.error('Error sending OTP email:', error);
+    res.status(500).json({ message: 'Failed to send OTP email.' });
+  }
 });
 
 // Verify OTP
@@ -253,188 +267,185 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * c;
 }
 
-// Check distance to fixed parking coordinates
-app.post('/check-distance', (req, res) => {
-  const { lat, lon } = req.body;
+// Check distance to fixed parking coordinates (just example coords)
+app.get('/api/check-distance', (req, res) => {
+  const { lat, lon } = req.query;
 
-  if (typeof lat !== 'number' || typeof lon !== 'number') {
-    return res.status(400).json({ error: 'Invalid or missing lat/lon values' });
-  }
+  if (!lat || !lon) return res.status(400).json({ message: 'Latitude and longitude required.' });
 
-  const parkingLat = 31.963158;
+  // Example fixed location (e.g., company parking)
+  const parkingLat = 31.963158; 
   const parkingLon = 35.930359;
 
-  const distance = haversine(lat, lon, parkingLat, parkingLon);
-  const maxDistance = 0.1; // km = 100 meters
+  const distance = haversine(parseFloat(lat), parseFloat(lon), parkingLat, parkingLon);
 
-  res.json({ allowed: distance <= maxDistance });
+  const maxDistanceKm = 1; // max 1 km radius
+
+  res.status(200).json({
+    distance,
+    isNear: distance <= maxDistanceKm,
+  });
 });
 
-// Charge user wallet and log the charge
-app.post('/api/charge-user', async (req, res) => {
+// Add a charge (owner charges user)
+app.post('/api/charges', async (req, res) => {
   const { userId, amount, ownerNumber } = req.body;
 
-  if (!userId || !amount || !ownerNumber) {
-    return res.status(400).json({ message: 'Missing required fields.' });
-  }
+  if (!userId || !amount || !ownerNumber) return res.status(400).json({ message: 'Missing parameters.' });
 
   try {
-    const user = await User.findOne({ _id: userId }); // Assuming userId is MongoDB _id
+    const user = await User.findById(userId);
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
     user.wallet.balance += amount;
     user.wallet.lastUpdated = new Date();
     await user.save();
 
-    const log = new ChargeLog({
-      userId: user._id,
-      amount,
-      ownerNumber,
-      note: `Owner ${ownerNumber} charged user ${userId}`,
-    });
-
+    const log = new ChargeLog({ userId, amount, ownerNumber, note: `Owner ${ownerNumber} charged user ${user.userName}` });
     await log.save();
 
-    res.status(200).json({ message: 'Wallet charged and log saved.' });
-  } catch (error) {
-    console.error(error);
+    res.status(200).json({ message: 'Charge added successfully.', newBalance: user.wallet.balance });
+  } catch {
     res.status(500).json({ message: 'Server error.' });
   }
 });
 
-// Get user wallet balance
-app.get('/api/wallet/:userName', async (req, res) => {
+// List payments history
+app.get('/api/payments', async (req, res) => {
   try {
-    const user = await User.findOne({ userName: req.params.userName }).select('_id wallet');
+    const payments = await Payment.find().sort({ date: -1 });
+    res.status(200).json(payments);
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Add new payment
+app.post('/api/payments', async (req, res) => {
+  const { userName, amount, description } = req.body;
+  if (!userName || !amount) return res.status(400).json({ message: 'Missing parameters.' });
+
+  try {
+    const payment = new Payment({ userName, amount, description });
+    await payment.save();
+    res.status(201).json({ message: 'Payment added.' });
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Parking slots routes with clearing expired locks middleware
+
+app.use(clearExpiredLocks);
+
+app.get('/api/parking-slots', async (req, res) => {
+  try {
+    const slots = await ParkingSlot.find();
+    res.status(200).json(slots);
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+app.get('/api/parking-slots/available', async (req, res) => {
+  try {
+    const availableSlots = await ParkingSlot.find({ status: 'available', lockedBy: null });
+    res.status(200).json(availableSlots);
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Lock a slot for a user (set lockExpiresAt for 10 minutes)
+app.post('/api/parking-slots/lock', async (req, res) => {
+  const { slotId, userName } = req.body;
+
+  if (!slotId || !userName) return res.status(400).json({ message: 'Missing parameters.' });
+
+  try {
+    const slot = await ParkingSlot.findById(slotId);
+    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
+
+    if (slot.lockedBy && slot.lockExpiresAt > new Date()) {
+      return res.status(400).json({ message: 'Slot is already locked.' });
+    }
+
+    slot.lockedBy = userName;
+    slot.lockExpiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins from now
+    await slot.save();
+
+    res.status(200).json({ message: 'Slot locked successfully.', slot });
+  } catch {
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
+// Confirm a parking slot and update wallet deduction
+app.post('/api/parking-slots/confirm', async (req, res) => {
+  const { slotId, userName, durationHours, ratePerHour } = req.body;
+
+  if (!slotId || !userName || !durationHours || !ratePerHour) {
+    return res.status(400).json({ message: 'Missing parameters.' });
+  }
+
+  try {
+    const slot = await ParkingSlot.findById(slotId);
+    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
+
+    if (slot.lockedBy !== userName) {
+      return res.status(400).json({ message: 'You have not locked this slot.' });
+    }
+
+    const user = await User.findOne({ userName });
     if (!user) return res.status(404).json({ message: 'User not found.' });
 
-    res.status(200).json({
-      userID: user._id,
-      balance: user.wallet.balance,
-      lastUpdated: user.wallet.lastUpdated
-    });
-  } catch (err) {
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-
-// Deduct amount from user's wallet and log the payment
-app.post('/api/wallet/deduct', async (req, res) => {
-  const { userName, amount, description } = req.body;
-
-  if (!userName || typeof amount !== 'number' || !description) {
-    return res.status(400).json({ message: 'Username, amount, and description are required.' });
-  }
-
-  try {
-    const user = await User.findOne({ userName });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
+    const cost = durationHours * ratePerHour;
+    if (user.wallet.balance < cost) {
+      return res.status(400).json({ message: 'Insufficient balance.' });
     }
 
-    if (user.wallet.balance < amount) {
-      return res.status(400).json({ message: 'Insufficient wallet balance.' });
-    }
-
-    // Deduct balance
-    user.wallet.balance -= amount;
+    // Deduct cost
+    user.wallet.balance -= cost;
     user.wallet.lastUpdated = new Date();
     await user.save();
 
-    // Log payment
-    const payment = new Payment({
-      userName,
-      amount,
-      description
-    });
-    await payment.save();
+    // Update slot
+    slot.status = 'occupied';
+    slot.userName = userName;
+    slot.lockedBy = null;
+    slot.lockExpiresAt = null;
+    slot.lastUpdated = new Date();
+    await slot.save();
 
-    res.status(200).json({
-      message: 'Amount deducted and payment recorded successfully.',
-      newBalance: user.wallet.balance
-    });
-  } catch (error) {
-    console.error('Error deducting amount and logging payment:', error);
+    res.status(200).json({ message: 'Parking slot confirmed.', newBalance: user.wallet.balance });
+  } catch {
     res.status(500).json({ message: 'Server error.' });
   }
 });
 
-app.get('/api/payments/:userName', async (req, res) => {
-  try {
-    const history = await Payment.find({ userName: req.params.userName }).sort({ date: -1 });
-    res.status(200).json(history);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-// Charge wallet from bank (virtual bank integration)
-app.post('/api/charge-bank', async (req, res) => {
-  const { userName, amount, transactionId } = req.body;
+// Stripe payment example endpoint
+app.post('/api/stripe-payment', async (req, res) => {
+  const { amount, currency = 'usd', paymentMethodId } = req.body;
 
-  if (!userName || typeof amount !== 'number') {
-    return res.status(400).json({ message: 'Username and amount are required.' });
+  if (!amount || !paymentMethodId) {
+    return res.status(400).json({ message: 'Missing parameters.' });
   }
 
   try {
-    const user = await User.findOne({ userName });
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found.' });
-    }
-
-    user.wallet.balance += amount;
-    user.wallet.lastUpdated = new Date();
-    await user.save();
-
-    // Log the bank top-up in the payments history
-    const payment = new Payment({
-      userName,
-      amount,
-      description: transactionId ? `Bank Top-Up (Transaction ID: ${transactionId})` : 'Bank Top-Up'
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100), // amount in cents
+      currency,
+      payment_method: paymentMethodId,
+      confirm: true,
     });
 
-    await payment.save();
-
-    res.status(200).json({
-      message: 'Wallet successfully charged from bank.',
-      newBalance: user.wallet.balance
-    });
-
+    res.status(200).json({ message: 'Payment successful', paymentIntent });
   } catch (error) {
-    console.error('Bank top-up error:', error);
-    res.status(500).json({ message: 'Server error.' });
+    res.status(400).json({ message: 'Payment failed', error: error.message });
   }
 });
 
-
-// Use middleware to clear expired locks for /api/slots routes
-app.use('/api/slots', clearExpiredLocks);
-app.get('/api/slots', async (req, res) => {
-  try {
-    const slots = await ParkingSlot.find().lean();
-
-    // You can normalize the response here, if needed:
-    const normalizedSlots = slots.map(slot => ({
-      _id: slot._id,
-      slotNumber: slot.slotNumber,
-      status: slot.status,
-      userName: slot.userName ?? null,       // explicitly null if undefined
-      lockedBy: slot.lockedBy ?? null,
-      lockExpiresAt: slot.lockExpiresAt ? slot.lockExpiresAt.toISOString() : null,
-      lastUpdated: slot.lastUpdated ? slot.lastUpdated.toISOString() : null,
-    }));
-
-    res.json(normalizedSlots);
-  } catch (error) {
-    console.error('Error fetching slots:', error);
-    res.status(500).json({ error: 'Failed to fetch slots' });
-  }
-});
-
-
-
+// Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });
