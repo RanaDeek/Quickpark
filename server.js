@@ -445,27 +445,27 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     console.error('Error updating slot:', err);
     res.status(500).json({ message: 'Server error.' });
   }
-});
-app.get('/api/get-balances', async (req, res) => {
+});app.get('/api/get-balances', async (req, res) => {
   const ownerNumber = req.query.ownerNumber;
   if (!ownerNumber) {
     return res.status(400).json({ message: 'Missing ownerNumber parameter' });
   }
 
   try {
-    const users = await User.find({ ownerTelephone: ownerNumber });
-    if (!users || users.length === 0) {
-      return res.status(404).json({ message: 'No users found for this ownerNumber' });
-    }
+    const chargeResult = await ChargeLog.aggregate([
+      { $match: { ownerNumber } },
+      { $group: { _id: null, totalCharged: { $sum: "$amount" } } }
+    ]);
 
-    const amounts = users.map(user => user.balance || 0);
-    const total = amounts.reduce((acc, val) => acc + val, 0);
+    const totalCharged = chargeResult[0]?.totalCharged || 0;
 
-    res.json({ total, amounts });
+    res.json({ ownerNumber, totalCharged });
   } catch (error) {
+    console.error('Error fetching total charged:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
+
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
   const { cmd, slot, pin, duration } = req.body;
