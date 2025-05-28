@@ -409,43 +409,35 @@ app.post('/api/charge-bank', async (req, res) => {
 async function clearExpiredLocks(req, res, next) {
   const now = new Date();
   try {
-    await ParkingSlot.updateMany(
+    console.log("Clearing expired locks...");
+    const result = await ParkingSlot.updateMany(
       { lockExpiresAt: { $lt: now } },
       { $set: { lockedBy: null, lockExpiresAt: null } }
     );
+    console.log(`Expired locks cleared: ${result.modifiedCount}`);
     next();
   } catch (err) {
     console.error('Error clearing expired locks:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 }
-app.use('/api/slots', clearExpiredLocks);
 
-// Helper middleware to validate and parse slotNumber param
-function validateSlotNumber(req, res, next) {
-  const slotNumber = parseInt(req.params.slotNumber, 10);
-  if (isNaN(slotNumber)) {
-    return res.status(400).json({ error: 'Invalid slotNumber parameter' });
-  }
-  req.slotNumber = slotNumber;
-  next();
-}
-
-// GET /api/slots?status=available (optional filter)
 app.get('/api/slots', async (req, res) => {
-  const filter = {};
-  if (req.query.status) {
-    if (['available', 'occupied'].includes(req.query.status)) {
-      filter.status = req.query.status;
-    } else {
-      return res.status(400).json({ error: 'Invalid status filter' });
-    }
-  }
-
   try {
+    console.log("Fetching parking slots...");
+    const filter = {};
+    if (req.query.status) {
+      if (['available', 'occupied'].includes(req.query.status)) {
+        filter.status = req.query.status;
+      } else {
+        return res.status(400).json({ error: 'Invalid status filter' });
+      }
+    }
     const slots = await ParkingSlot.find(filter).sort({ slotNumber: 1 });
+    console.log(`Slots fetched: ${slots.length}`);
     res.status(200).json(slots);
   } catch (error) {
+    console.error('Error retrieving slots:', error);
     res.status(500).json({ message: 'Server error retrieving slots', error: error.message });
   }
 });
