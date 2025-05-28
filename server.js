@@ -6,7 +6,9 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const nodemailer = require('nodemailer');
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
-
+// In-memory queue for ESP commands
+typeof global.pendingCommands === 'undefined' && (global.pendingCommands = []);
+const pendingCommands = global.pendingCommands;
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -57,17 +59,6 @@ const paymentSchema = new mongoose.Schema({
   description: String,
   date: { type: Date, default: Date.now }
 });
-
-const slotSchema = new mongoose.Schema({
-  slotNumber: { type: Number, required: true, unique: true },
-  status: { type: String, enum: ['available', 'occupied', 'locked'], default: 'available' },
-  userName: { type: String, default: null },
-  lastUpdated: { type: Date, default: Date.now },
-  lockedBy: { type: String, default: null },
-  lockExpiresAt: { type: Date, default: null },
-});
-
-const Slot = mongoose.model('Slot', slotSchema);
 
 const Payment = mongoose.model('Payment', paymentSchema);
 
@@ -406,18 +397,26 @@ app.post('/api/charge-bank', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-// Get all parking slots
-app.get('/api/slots', async (req, res) => {
-  try {
-    const slots = await Slot.find().sort({ slotNumber: 1 }); // sort by slotNumber ascending
-    res.status(200).json(slots);
-  } catch (error) {
-    console.error('Error fetching slots:', error);
-    res.status(500).json({ message: 'Server error while fetching slots.' });
-  }
+
+// ────────────────────────────────────────────────────────────────────────────
+// New ESP Command Queue Endpoints
+// ────────────────────────────────────────────────────────────────────────────
+
+// POST a new command (from Flutter)
+app.post('/api/cmd', (req, res) => {
+  const { cmd, slot, pin, duration } = req.body;
+  if (!cmd) return res.status(400).json({ message: 'Missing cmd' });
+  pendingCommands.push({ cmd, slot, pin, duration });
+  res.json({ status: 'ok' });
 });
 
-
+// GET next pending command (for ESP polling)
+app.get('/api/cmd/next', (req, res) => {
+  if (pendingCommands.length === 0) {
+    return res.status(204).end();
+  }
+  res.json(pendingCommands.shift());
+});
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
