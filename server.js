@@ -448,26 +448,25 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
 });
 app.get('/api/get-balances', async (req, res) => {
   const ownerNumber = req.query.ownerNumber;
+  console.log('GET /api/get-balances called with ownerNumber:', ownerNumber);
 
   if (!ownerNumber) {
+    console.log('Missing ownerNumber parameter');
     return res.status(400).json({ message: 'Missing ownerNumber parameter' });
   }
 
   try {
-    // Find all users with the matching ownerTelephone
     const users = await User.find({ ownerTelephone: ownerNumber });
+    console.log('Users found:', users.length);
 
     if (!users || users.length === 0) {
+      console.log('No users found for this ownerNumber');
       return res.status(404).json({ message: 'No users found for this ownerNumber' });
     }
 
-    // Extract balances from found users
     const amounts = users.map(user => user.balance || 0);
-
-    // Sum all balances
     const total = amounts.reduce((acc, val) => acc + val, 0);
 
-    // Respond with total and amounts array (optional)
     res.json({ total, amounts });
   } catch (error) {
     console.error('Error fetching balances:', error);
