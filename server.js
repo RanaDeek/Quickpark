@@ -448,19 +448,13 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
 });
 app.get('/api/get-balances', async (req, res) => {
   const ownerNumber = req.query.ownerNumber;
-  console.log('GET /api/get-balances called with ownerNumber:', ownerNumber);
-
   if (!ownerNumber) {
-    console.log('Missing ownerNumber parameter');
     return res.status(400).json({ message: 'Missing ownerNumber parameter' });
   }
 
   try {
     const users = await User.find({ ownerTelephone: ownerNumber });
-    console.log('Users found:', users.length);
-
     if (!users || users.length === 0) {
-      console.log('No users found for this ownerNumber');
       return res.status(404).json({ message: 'No users found for this ownerNumber' });
     }
 
@@ -469,7 +463,6 @@ app.get('/api/get-balances', async (req, res) => {
 
     res.json({ total, amounts });
   } catch (error) {
-    console.error('Error fetching balances:', error);
     res.status(500).json({ message: 'Server error' });
   }
 });
