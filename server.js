@@ -435,7 +435,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
   const now = new Date();
 
   try {
-    const slot = await ParkingSlot.findOne({ slotNumber: parseInt(slotNumber, 10) });
+    const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
     // Handle expired lock
@@ -482,7 +482,7 @@ app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const lockDurationMs = 2 * 60 * 1000; // 2 minutes
 
   try {
-    const slot = await ParkingSlot.findOne({ slotNumber });
+    const slot = await Slot.findOne({ slotNumber });
 
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
@@ -515,7 +515,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   const now = new Date();
 
   try {
-    const slot = await ParkingSlot.findOne({ slotNumber });
+    const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
     if (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now) {
@@ -539,7 +539,7 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   const slotNumber = parseInt(req.params.slotNumber, 10);
 
   try {
-    const slot = await ParkingSlot.findOne({ slotNumber });
+    const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
     if (slot.lockedBy !== userName) {
