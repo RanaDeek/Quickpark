@@ -70,9 +70,11 @@ const slotSchema = new mongoose.Schema({
   lastUpdated: { type: Date, default: Date.now },
   lockedBy: { type: String, default: null },
   lockExpiresAt: { type: Date, default: null },
+  occupiedSince: { type: Date, default: null },
 
-
+  timeStayed: { type: Number, default: 0 }, 
 });
+
 const Slot = mongoose.model('Slot', slotSchema);
 
 // Utility function to send OTP email
@@ -427,7 +429,6 @@ app.get('/api/slots', async (req, res) => {
   }
 });
 
-// Update a slot’s status in the database
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
 app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
@@ -508,7 +509,6 @@ app.post('/api/slots/:slotNumber/select', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
 app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
@@ -522,8 +522,9 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
       return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
     }
 
-    slot.status = 'occupied';
     slot.userName = userName;
+    slot.occupiedSince = now;      // Set occupied start time
+    slot.timeStayed = 0;           // Reset stayed time on new occupation (optional)
     slot.lockedBy = null;
     slot.lockExpiresAt = null;
     slot.lastUpdated = now;
@@ -534,9 +535,11 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+
 app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
+  const now = new Date();
 
   try {
     const slot = await Slot.findOne({ slotNumber });
@@ -546,15 +549,28 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
       return res.status(403).json({ error: 'You do not hold the lock' });
     }
 
+    // Calculate time stayed if slot is occupied and occupiedSince exists
+    if (slot.status === 'occupied' && slot.occupiedSince) {
+      const durationMs = now - slot.occupiedSince;
+      const durationMinutes = Math.floor(durationMs / 60000);
+      slot.timeStayed += durationMinutes;
+      slot.occupiedSince = null;
+      slot.status = 'available';
+      slot.userName = null;
+    }
+
     slot.lockedBy = null;
     slot.lockExpiresAt = null;
+    slot.lastUpdated = now;
+
     await slot.save();
 
-    res.json({ message: 'Lock released' });
+    res.json({ message: 'Lock released and slot freed', slot });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
