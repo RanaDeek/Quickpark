@@ -561,6 +561,33 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   }
 });
 
+app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
+  const { userName } = req.body;
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+  const now = new Date();
+
+  try {
+    const slot = await Slot.findOne({ slotNumber });
+
+    if (!slot) {
+      return res.status(404).json({ error: 'Slot not found' });
+    }
+
+    if (slot.status !== 'reserved' || slot.userName !== userName) {
+      return res.status(403).json({ error: 'You do not have permission to occupy this slot' });
+    }
+
+    slot.status = 'occupied';
+    slot.occupiedSince = now;
+    slot.lastUpdated = now;
+
+    await slot.save();
+    res.json({ message: 'Slot is now occupied', slot });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
