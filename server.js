@@ -561,11 +561,10 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   }
 });
 
+// Cancel reservation API
 app.put('/api/slots/:slotNumber/handle_reservation', async (req, res) => {
-  const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
-  const now = new Date();
-
+  
   try {
     const slot = await Slot.findOne({ slotNumber });
 
@@ -573,27 +572,22 @@ app.put('/api/slots/:slotNumber/handle_reservation', async (req, res) => {
       return res.status(404).json({ error: 'Slot not found' });
     }
 
-    // Cancel reservation if expired
-    if (slot.status === 'reserved' && slot.reservedUntil && now > slot.reservedUntil) {
+    // Only cancel if slot is reserved
+    if (slot.status === 'reserved') {
       slot.status = 'available';
       slot.userName = null;
-      slot.reservedUntil = null;
-      slot.lastUpdated = now;
+      slot.lastUpdated = new Date();
       await slot.save();
-      return res.status(410).json({ error: 'Reservation expired. Slot is now available again.' });
-    }
 
-    // Deny access if user does not match or slot not reserved
-    if (slot.status !== 'reserved' || slot.userName !== userName) {
-      return res.status(403).json({ error: 'You do not have permission to access this slot' });
+      return res.json({ message: 'Reservation cancelled successfully' });
+    } else {
+      return res.status(400).json({ error: 'Slot is not reserved' });
     }
-
-    // Reservation is still valid
-    res.json({ message: 'Reservation is valid. Proceed to occupy when ready.', slot });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
+
 
 
 app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
