@@ -561,7 +561,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   }
 });
 
-app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
+app.put('/api/slots/:slotNumber/handle_reservation', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
   const now = new Date();
@@ -573,20 +573,28 @@ app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
       return res.status(404).json({ error: 'Slot not found' });
     }
 
-    if (slot.status !== 'reserved' || slot.userName !== userName) {
-      return res.status(403).json({ error: 'You do not have permission to occupy this slot' });
+    // Cancel reservation if expired
+    if (slot.status === 'reserved' && slot.reservedUntil && now > slot.reservedUntil) {
+      slot.status = 'available';
+      slot.userName = null;
+      slot.reservedUntil = null;
+      slot.lastUpdated = now;
+      await slot.save();
+      return res.status(410).json({ error: 'Reservation expired. Slot is now available again.' });
     }
 
-    slot.status = 'occupied';
-    slot.occupiedSince = now;
-    slot.lastUpdated = now;
+    // Deny access if user does not match or slot not reserved
+    if (slot.status !== 'reserved' || slot.userName !== userName) {
+      return res.status(403).json({ error: 'You do not have permission to access this slot' });
+    }
 
-    await slot.save();
-    res.json({ message: 'Slot is now occupied', slot });
+    // Reservation is still valid
+    res.json({ message: 'Reservation is valid. Proceed to occupy when ready.', slot });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
+
 
 app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   const { userName } = req.body;
