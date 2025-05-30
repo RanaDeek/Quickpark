@@ -442,7 +442,6 @@ app.get('/api/slots', async (req, res) => {
     res.status(500).json({ message: 'Server error while fetching slots.' });
   }
 });
-
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
 app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
@@ -488,7 +487,6 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
@@ -530,6 +528,19 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   const now = new Date();
 
   try {
+    // 1. Check if the user already has a reserved or occupied slot
+    const existingSlot = await Slot.findOne({
+      userName,
+      status: { $in: ['reserved', 'occupied'] }
+    });
+
+    if (existingSlot) {
+      return res.status(400).json({
+        error: `You already have a ${existingSlot.status} slot (#${existingSlot.slotNumber})`
+      });
+    }
+
+    // 2. Proceed to reserve the new slot
     const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
@@ -538,7 +549,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     }
 
     slot.userName = userName;
-    slot.status = 'reserved'; // <-- reserved, not occupied
+    slot.status = 'reserved';
     slot.lockedBy = null;
     slot.lockExpiresAt = null;
     slot.lastUpdated = now;
@@ -579,7 +590,6 @@ app.post('/api/cmd', (req, res) => {
   pendingCommands.push({ cmd, slot, pin, duration });
   res.json({ status: 'ok' });
 });
-
 // GET next pending command (for ESP polling)
 app.get('/api/cmd/next', (req, res) => {
   if (pendingCommands.length === 0) {
@@ -587,8 +597,6 @@ app.get('/api/cmd/next', (req, res) => {
   }
   res.json(pendingCommands.shift());
 });
-
-
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
