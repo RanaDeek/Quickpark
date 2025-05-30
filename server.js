@@ -416,7 +416,21 @@ app.get('/api/get-balances', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+app.post('/deduct-wallet', async (req, res) => {
+  const { userId, amount } = req.body;
 
+  const user = await db.collection('users').findOne({ _id: new ObjectId(userId) });
+  if (!user || user.wallet < amount) {
+    return res.json({ success: false, message: 'Insufficient balance' });
+  }
+
+  await db.collection('users').updateOne(
+    { _id: new ObjectId(userId) },
+    { $inc: { wallet: -amount } }
+  );
+
+  res.json({ success: true });
+});
 //Get all parking slots
 app.get('/api/slots', async (req, res) => {
   try {
