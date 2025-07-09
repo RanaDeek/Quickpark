@@ -456,39 +456,68 @@ app.get('/api/slots', async (req, res) => {
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
 app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
-  const { status, userName, lockedBy, lockExpiresAt } = req.body;
+  const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
 
   try {
     const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
-    // Clear expired lock
+    // Handle expired reservation
     if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
       slot.lockedBy = null;
       slot.lockExpiresAt = null;
+      if (slot.status === 'reserved') {
+        slot.status = 'available';
+      }
     }
 
-    // Prevent occupying an already occupied slot
+    // Block double occupancy
     if (status === 'occupied' && slot.status === 'occupied') {
       return res.status(409).json({ error: 'Slot already occupied.' });
     }
 
     if (status) {
+      // === OCCUPIED ===
       if (status === 'occupied') {
-        if (!userName) return res.status(400).json({ error: 'userName required when occupying.' });
+        // Reservation protection
+        if (
+          slot.status === 'reserved' &&
+          slot.lockedBy &&
+          slot.lockExpiresAt &&
+          slot.lockExpiresAt > now &&
+          slot.lockedBy !== userName
+        ) {
+          return res.status(403).json({ error: 'Slot is reserved by another user.' });
+        }
+
         slot.status = 'occupied';
-        slot.userName = userName;
+
+        if (from === 'sensor') {
+          // Sensor update: don't change userName unless needed
+          slot.userName = slot.userName || null;
+        } else {
+          if (!userName) {
+            return res.status(400).json({ error: 'userName is required when occupying a slot.' });
+          }
+          slot.userName = userName;
+        }
+
         slot.lockedBy = null;
         slot.lockExpiresAt = null;
-      } else if (status === 'reserved') {
+      }
+
+      // === RESERVED ===
+      else if (status === 'reserved') {
         if (!lockedBy) return res.status(400).json({ error: 'lockedBy required when reserving.' });
         slot.status = 'reserved';
         slot.lockedBy = lockedBy;
-        slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : new Date(Date.now() + 30 * 60 * 1000); // default 30 mins lock
+        slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : new Date(now.getTime() + 15 * 60 * 1000);
         slot.userName = null;
-      } else {
-        // For available or other statuses clear user and lock
+      }
+
+      // === AVAILABLE or others ===
+      else {
         slot.status = status;
         slot.userName = null;
         slot.lockedBy = null;
@@ -496,8 +525,9 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       }
     }
 
-    // Do NOT override lockedBy or lockExpiresAt here if status is reserved
-    // This prevents accidental clearing of lock on update
+    // Optional override of lock info if not in 'reserved' status
+    if (lockedBy !== undefined && status !== 'reserved') slot.lockedBy = lockedBy || null;
+    if (lockExpiresAt !== undefined && status !== 'reserved') slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : null;
 
     slot.lastUpdated = now;
     await slot.save();
@@ -515,17 +545,16 @@ app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const slotNumber = parseInt(req.params.slotNumber, 10);
 
   const now = new Date();
-  const lockDurationMs = 2 * 60 * 1000; // 2 minutes lock
+  const lockDurationMs = 2 * 60 * 1000; // 2 minutes
 
   try {
     const slot = await Slot.findOne({ slotNumber });
 
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
-    // Check if slot is locked and lock not expired
     if (slot.lockedBy && slot.lockExpiresAt && slot.lockExpiresAt > now) {
       if (slot.lockedBy === userName) {
-        // Extend lock for same user
+        // Extend lock
         slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
         await slot.save();
         return res.status(200).json({ message: 'Lock extended.', slot });
@@ -534,7 +563,7 @@ app.post('/api/slots/:slotNumber/select', async (req, res) => {
       }
     }
 
-    // Acquire lock for this user
+    // Lock it
     slot.lockedBy = userName;
     slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
     await slot.save();
@@ -567,10 +596,6 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     // 2. Proceed to reserve the new slot
     const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
-    console.log('slot.lockedBy:', slot.lockedBy);
-    console.log('userName:', userName);
-    console.log('slot.lockExpiresAt:', slot.lockExpiresAt);
-    console.log('now:', now);
 
     if (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now) {
       return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
