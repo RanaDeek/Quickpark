@@ -550,8 +550,8 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
 
     slot.userName = userName;
     slot.status = 'reserved';
-    slot.lockedBy = null;
-    slot.lockExpiresAt = null;
+    slot.lockedBy = userName;
+    slot.lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
     slot.lastUpdated = now;
 
     await slot.save();
@@ -623,106 +623,6 @@ app.get('/api/cmd/next', (req, res) => {
   }
   res.json(pendingCommands.shift());
 });
-/*****************************************************************
- *  HARDWARE-FACING SECTION
- *****************************************************************/
-
-/* 1) Simple API-key guard (attach early, once) */
-function verifyDeviceKey(req, _res, next) {
-  const key = req.header('x-api-key');
-  if (key && key === process.env.DEVICE_API_KEY) {
-    req.isSensor = true;                      // mark ESP32 calls
-  }
-  next();
-}
-app.use(verifyDeviceKey);
-
-/* 2) PUT  /api/slots/:slotNumber
- *    – ESP sends   { status:"occupied"|"available", from:"sensor" }
- *    – Mobile/web  keeps full payload  (userName, locks, etc.)
- */
-app.put('/api/slots/:slotNumber', async (req, res) => {
-  const { slotNumber } = req.params;
-  const {
-    status,
-    userName,
-    lockedBy,
-    lockExpiresAt,
-    from                    // ESP boards set  {from:"sensor"}
-  } = req.body;
-
-  const now      = new Date();
-  const isSensor = req.isSensor || from === 'sensor';
-
-  try {
-    const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
-    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
-
-    /* ── auto-unlock expired locks ── */
-    if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
-      slot.lockedBy = slot.lockExpiresAt = null;
-    }
-
-    /* ── SENSOR-SPECIFIC RULE ────────────────────────────────
-       Never let a board override a reservation with “available”
-    */
-    if (isSensor &&
-        slot.status === 'reserved' &&
-        status === 'available') {
-      return res.json({ message: 'Reservation unchanged (sensor ignored).', slot });
-    }
-
-    /* ── mobile/web validation only ── */
-    if (!isSensor) {
-      if (status === 'occupied' && slot.status === 'occupied') {
-        return res.status(409).json({ error: 'Slot already occupied.' });
-      }
-      if (status === 'occupied' && !userName) {
-        return res.status(400).json({ error: 'userName required when occupying.' });
-      }
-    }
-
-    /* ── apply updates ── */
-    if (status) {
-      slot.status = status;
-      if (!isSensor) slot.userName = (status === 'occupied') ? userName : null;
-    }
-
-    /* ── lock fields editable only by app ── */
-    if (!isSensor) {
-      if (lockedBy      !== undefined) slot.lockedBy      = lockedBy || null;
-      if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
-    }
-
-    slot.lastUpdated = now;
-    await slot.save();
-    res.json({ message: 'Slot updated.', slot });
-
-  } catch (err) {
-    console.error('[API] Slot update error:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-/* 3) COMMAND QUEUE  – ESP polls / mobile pushes */
-
-/* mobile/web → queue a command */
-app.post('/api/cmd', (req, res) => {
-  const { cmd, slot, pin, duration } = req.body;
-  if (!cmd) return res.status(400).json({ message: 'Missing cmd' });
-  pendingCommands.push({ cmd, slot, pin, duration });
-  res.json({ status: 'ok' });
-});
-
-/* ESP-32 → fetch next command (poll every ~1 s) */
-app.get('/api/cmd/next', (_req, res) => {
-  if (pendingCommands.length === 0) return res.status(204).end();
-  res.json(pendingCommands.shift());
-});
-
-/*****************************************************************
- *  END hardware section
- *****************************************************************/
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
