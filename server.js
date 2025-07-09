@@ -76,6 +76,17 @@ const slotSchema = new mongoose.Schema({
 
 
 const Slot = mongoose.model('Slot', slotSchema);
+const cron = require('node-cron');
+
+// Run every minute to release expired locks
+cron.schedule('* * * * *', async () => {
+  const now = new Date();
+  await Slot.updateMany(
+    { lockExpiresAt: { $lt: now } },
+    { $set: { lockedBy: null, lockExpiresAt: null } }
+  );
+  console.log('⏳ Expired slot locks released.');
+});
 
 // Utility function to send OTP email
 async function sendOTPEmail(email, otp) {
