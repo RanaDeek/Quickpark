@@ -474,28 +474,25 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       return res.status(409).json({ error: 'Slot already occupied.' });
     }
 
-    if (status) {
-      slot.status = status;
-
-      // When occupying a slot:
-      if (status === 'occupied') {
-        // If update comes from sensor (like your ESP32), allow no userName
-        if (from === 'sensor') {
-          // Don't overwrite userName — keep existing or null
-          // Or set it to null explicitly if you want
-          slot.userName = slot.userName || null;
-        } else {
-          // If from app or other clients, require userName
-          if (!userName) {
-            return res.status(400).json({ error: 'userName is required when occupying a slot.' });
-          }
-          slot.userName = userName;
-        }
-      } else {
-        // If status not occupied, clear userName
-        slot.userName = null;
-      }
-    }
+   // Allow setting reserved status
+if (status) {
+  if (status === 'occupied') {
+    if (!userName) return res.status(400).json({ error: 'userName required when occupying.' });
+    slot.status = 'occupied';
+    slot.userName = userName;
+  } else if (status === 'reserved') {
+    if (!lockedBy) return res.status(400).json({ error: 'lockedBy required when reserving.' });
+    slot.status = 'reserved';
+    slot.lockedBy = lockedBy;
+    slot.lockExpiresAt = lockExpiresAt || new Date(Date.now() + 30 * 60 * 1000); // default 15 min
+  } else {
+    // available or other statuses
+    slot.status = status;
+    slot.userName = null;
+    slot.lockedBy = null;
+    slot.lockExpiresAt = null;
+  }
+}
 
     if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
     if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
@@ -574,7 +571,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     slot.userName = userName;
     slot.status = 'reserved';
     slot.lockedBy = userName;
-slot.lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    slot.lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
     slot.lastUpdated = now;
 
     await slot.save();
