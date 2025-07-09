@@ -456,7 +456,7 @@ app.get('/api/slots', async (req, res) => {
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
 app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
-  const { status, userName, lockedBy, lockExpiresAt } = req.body;
+  const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
 
   try {
@@ -474,14 +474,25 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       return res.status(409).json({ error: 'Slot already occupied.' });
     }
 
-    // Update status and userName if provided
     if (status) {
       slot.status = status;
 
+      // When occupying a slot:
       if (status === 'occupied') {
-        if (!userName) return res.status(400).json({ error: 'userName is required when occupying a slot.' });
-        slot.userName = userName;
+        // If update comes from sensor (like your ESP32), allow no userName
+        if (from === 'sensor') {
+          // Don't overwrite userName — keep existing or null
+          // Or set it to null explicitly if you want
+          slot.userName = slot.userName || null;
+        } else {
+          // If from app or other clients, require userName
+          if (!userName) {
+            return res.status(400).json({ error: 'userName is required when occupying a slot.' });
+          }
+          slot.userName = userName;
+        }
       } else {
+        // If status not occupied, clear userName
         slot.userName = null;
       }
     }
@@ -498,6 +509,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
@@ -562,7 +574,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     slot.userName = userName;
     slot.status = 'reserved';
     slot.lockedBy = userName;
-    slot.lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+slot.lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
     slot.lastUpdated = now;
 
     await slot.save();
@@ -619,51 +631,6 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-// Occupy a parking slot (after reservation)
-app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
-  const slotNumber = parseInt(req.params.slotNumber, 10);
-  const { userName } = req.body;
-
-  if (!userName) {
-    return res.status(400).json({ message: 'Missing userName in request body.' });
-  }
-
-  try {
-    const slot = await Slot.findOne({ slotNumber });
-
-    if (!slot) {
-      return res.status(404).json({ message: 'Slot not found.' });
-    }
-
-    // Check if slot is already occupied
-    if (slot.status === 'occupied') {
-      return res.status(409).json({ message: 'Slot is already occupied.' });
-    }
-
-    // Only allow occupation if reserved by the same user
-    if (slot.status !== 'reserved' || slot.userName !== userName) {
-      return res.status(400).json({ message: 'Slot must be reserved by the same user before occupation.' });
-    }
-
-    // Update slot to occupied
-    slot.status = 'occupied';
-    slot.occupiedSince = new Date();
-    slot.lockedBy = null;
-    slot.lockExpiresAt = null;
-    slot.lastUpdated = new Date();
-
-    await slot.save();
-
-    res.status(200).json({
-      message: `Slot ${slotNumber} is now occupied by ${userName}.`,
-      slot
-    });
-
-  } catch (err) {
-    console.error('Error occupying slot:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
 
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
@@ -679,185 +646,6 @@ app.get('/api/cmd/next', (req, res) => {
   }
   res.json(pendingCommands.shift());
 });
-
-/*****************************************************************
- *  HARDWARE-FACING + REAL-TIME LOGGING SECTION
- *****************************************************************/
-
-/* ──────────────────────────────────────────────────────────────
- *  0.  Real-time status log model
- *      (creates collection: slotstatuslogs)
- * ───────────────────────────────────────────────────────────── */
-const slotStatusLogSchema = new mongoose.Schema({
-  slotNumber: { type: Number, required: true },
-  status:     { type: String, enum: ['available','reserved','occupied'], required: true },
-  source:     { type: String, enum: ['sensor','app'], required: true },
-  timestamp:  { type: Date,   default: Date.now }
-});
-const SlotStatusLog = mongoose.model('SlotStatusLog', slotStatusLogSchema);
-
-/* ──────────────────────────────────────────────────────────────
- *  1.  Simple API-key guard  (attach once, early)
- *      ESP32 boards send header:  x-api-key: <DEVICE_API_KEY>
- * ───────────────────────────────────────────────────────────── */
-function verifyDeviceKey(req, _res, next) {
-  const key = req.header('x-api-key');
-  if (key && key === process.env.DEVICE_API_KEY) {
-    req.isSensor = true;                       // mark hardware calls
-  }
-  next();
-}
-app.use(verifyDeviceKey);
-
-/* ──────────────────────────────────────────────────────────────
- *  2.  PUT  /api/slots/:slotNumber
- *      • sensors POST/PUT  {status:"occupied"|"available", from:"sensor"}
- *      • app      PUT      full payload (userName, locks, etc.)
- *      • logs every status flip to SlotStatusLog
- * ───────────────────────────────────────────────────────────── */
-app.put('/api/slots/:slotNumber', async (req, res) => {
-  const { slotNumber } = req.params;
-  const {
-    status,
-    userName,
-    lockedBy,
-    lockExpiresAt,
-    from                         // sensors include  {from:"sensor"}
-  } = req.body;
-
-  const now      = new Date();
-  const isSensor = req.isSensor || from === 'sensor';
-
-  try {
-    const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
-    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
-
-    const oldStatus = slot.status;
-
-    /* auto-unlock if lock expired */
-    if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
-      slot.lockedBy = slot.lockExpiresAt = null;
-    }
-
-    /* SENSOR RULE:  never clear a reservation */
-    if (isSensor && oldStatus === 'reserved' && status === 'available') {
-      return res.json({ message: 'Reservation kept (sensor update ignored).', slot });
-    }
-
-    /* validation for app only */
-    if (!isSensor) {
-      if (status === 'occupied' && oldStatus === 'occupied') {
-        return res.status(409).json({ error: 'Slot already occupied.' });
-      }
-      if (status === 'occupied' && !userName) {
-        return res.status(400).json({ error: 'userName required when occupying.' });
-      }
-    }
-
-    /* apply updates */
-    if (status) {
-      slot.status = status;
-      if (!isSensor) slot.userName = (status === 'occupied') ? userName : null;
-    }
-
-    /* lock fields – app only */
-    if (!isSensor) {
-      if (lockedBy      !== undefined) slot.lockedBy      = lockedBy || null;
-      if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
-    }
-
-    slot.lastUpdated = now;
-    await slot.save();
-
-    /* log real-time change */
-    if (status && status !== oldStatus) {
-      await SlotStatusLog.create({
-        slotNumber: slot.slotNumber,
-        status,
-        source: isSensor ? 'sensor' : 'app'
-      });
-    }
-
-    res.json({ message: 'Slot updated.', slot });
-  } catch (err) {
-    console.error('[API] Slot update error:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
-
-/* ──────────────────────────────────────────────────────────────
- *  3.  Driver presses “Arrive” in app
- *      POST /api/slots/:slotNumber/arrive  { userName }
- * ───────────────────────────────────────────────────────────── */
-app.post('/api/slots/:slotNumber/arrive', async (req, res) => {
-  const slotNumber = parseInt(req.params.slotNumber, 10);
-  const { userName } = req.body;
-  if (!userName) return res.status(400).json({ error: 'userName required' });
-
-  try {
-    const slot = await Slot.findOne({ slotNumber });
-    if (!slot)                     return res.status(404).json({ error: 'Slot not found' });
-    if (slot.status !== 'reserved') return res.status(400).json({ error: 'Slot not reserved' });
-    if (slot.userName !== userName) return res.status(403).json({ error: 'Reservation belongs to another user' });
-
-    slot.status        = 'occupied';
-    slot.occupiedSince = new Date();
-    slot.lastUpdated   = new Date();
-    await slot.save();
-
-    /* log */
-    await SlotStatusLog.create({
-      slotNumber,
-      status: 'occupied',
-      source: 'app'
-    });
-
-    /* queue START so ESP32 drops the flap */
-    pendingCommands.push({ cmd: 'START' });
-
-    res.json({ message: 'Gate opened – enjoy your stay!', slot });
-  } catch (err) {
-    console.error('[ARRIVE] error:', err);
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-/* ──────────────────────────────────────────────────────────────
- *  4.  History feed – last 30 flips for a slot
- *      GET /api/slots/:slotNumber/history
- * ───────────────────────────────────────────────────────────── */
-app.get('/api/slots/:slotNumber/history', async (req, res) => {
-  const slotNumber = parseInt(req.params.slotNumber, 10);
-  try {
-    const rows = await SlotStatusLog.find({ slotNumber })
-                    .sort({ timestamp: -1 })
-                    .limit(30);
-    res.json(rows);
-  } catch (err) {
-    res.status(500).json({ message: 'Server error' });
-  }
-});
-
-/* ──────────────────────────────────────────────────────────────
- *  5.  COMMAND QUEUE
- *      mobile/web → /api/cmd      (POST)
- *      ESP32      → /api/cmd/next (GET, long-poll)
- * ───────────────────────────────────────────────────────────── */
-app.post('/api/cmd', (req, res) => {
-  const { cmd, slot, pin, duration } = req.body;
-  if (!cmd) return res.status(400).json({ message: 'Missing cmd' });
-  pendingCommands.push({ cmd, slot, pin, duration });
-  res.json({ status: 'ok' });
-});
-
-app.get('/api/cmd/next', (_req, res) => {
-  if (pendingCommands.length === 0) return res.status(204).end();
-  res.json(pendingCommands.shift());
-});
-
-/*****************************************************************
- *  END  hardware + logging section
- *****************************************************************/
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
