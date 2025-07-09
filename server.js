@@ -474,28 +474,36 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       return res.status(409).json({ error: 'Slot already occupied.' });
     }
 
-   // Allow setting reserved status
-if (status) {
-  if (status === 'occupied') {
-    if (!userName) return res.status(400).json({ error: 'userName required when occupying.' });
-    slot.status = 'occupied';
-    slot.userName = userName;
-  } else if (status === 'reserved') {
-    if (!lockedBy) return res.status(400).json({ error: 'lockedBy required when reserving.' });
-    slot.status = 'reserved';
-    slot.lockedBy = userName;
-    slot.lockExpiresAt = lockExpiresAt || new Date(Date.now() + 30 * 60 * 1000); // default 15 min
-  } else {
-    // available or other statuses
-    slot.status = status;
-    slot.userName = null;
-    slot.lockedBy = null;
-    slot.lockExpiresAt = null;
-  }
-}
+    // Handle statuses
+    if (status) {
+      if (status === 'occupied') {
+        if (!userName) return res.status(400).json({ error: 'userName required when occupying.' });
+        slot.status = 'occupied';
+        slot.userName = userName;
+        slot.lockedBy = null;
+        slot.lockExpiresAt = null;
+      } else if (status === 'reserved') {
+        if (!lockedBy) return res.status(400).json({ error: 'lockedBy required when reserving.' });
+        slot.status = 'reserved';
+        slot.lockedBy = lockedBy;
+        slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : new Date(Date.now() + 30 * 60 * 1000);
+        slot.userName = null;
+      } else {
+        // For 'available' or other statuses
+        slot.status = status;
+        slot.userName = null;
+        slot.lockedBy = null;
+        slot.lockExpiresAt = null;
+      }
+    }
 
-    if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
-    if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
+    // Only override if explicitly sent, else keep as set above
+    if (lockedBy !== undefined && status !== 'reserved') {
+      slot.lockedBy = lockedBy || null;
+    }
+    if (lockExpiresAt !== undefined && status !== 'reserved') {
+      slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : null;
+    }
 
     slot.lastUpdated = now;
     await slot.save();
@@ -506,6 +514,7 @@ if (status) {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
