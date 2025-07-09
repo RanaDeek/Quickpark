@@ -572,6 +572,10 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     // 2. Proceed to reserve the new slot
     const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
+    console.log('slot.lockedBy:', slot.lockedBy);
+console.log('userName:', userName);
+console.log('slot.lockExpiresAt:', slot.lockExpiresAt);
+console.log('now:', now);
 
     if (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now) {
       return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
