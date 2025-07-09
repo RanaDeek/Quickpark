@@ -487,6 +487,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
@@ -609,41 +610,6 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   }
 });
 // POST /api/slots/:slotNumber/occupy
-app.post('/api/slots/:slotNumber/occupy', async (req, res) => {
-  const slotNumber = parseInt(req.params.slotNumber, 10);
-  const { userName } = req.body;
-  const now = new Date();
-
-  try {
-    const slot = await Slot.findOne({ slotNumber });
-
-    if (!slot) {
-      return res.status(404).json({ message: 'Slot not found.' });
-    }
-
-    if (slot.status !== 'reserved') {
-      return res.status(400).json({ message: 'Slot is not reserved.' });
-    }
-
-    if (slot.userName !== userName) {
-      return res.status(403).json({ message: 'User mismatch.' });
-    }
-
-    slot.status = 'occupied';
-    slot.occupiedSince = now;
-    slot.lastUpdated = now;
-
-    await slot.save();
-
-    res.status(200).json({
-      message: 'Slot occupied successfully.',
-      slot
-    });
-  } catch (err) {
-    console.error('[ERROR] Occupy failed:', err);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
 
 
 // POST a new command (from Flutter)
