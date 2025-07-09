@@ -631,6 +631,56 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+// Occupy a parking slot (after reservation)
+app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+  const { userName } = req.body;
+
+  if (!userName) {
+    return res.status(400).json({ message: 'Missing userName in request body.' });
+  }
+
+  try {
+    const slot = await Slot.findOne({ slotNumber });
+
+    if (!slot) {
+      return res.status(404).json({ message: 'Slot not found.' });
+    }
+
+    // Check if slot is already occupied
+    if (slot.status === 'occupied') {
+      return res.status(409).json({ message: 'Slot is already occupied.' });
+    }
+
+    // Only allow occupation if reserved by the same user
+    if (slot.status !== 'reserved' || slot.userName !== userName) {
+      return res.status(400).json({ message: 'Slot must be reserved by the same user before occupation.' });
+    }
+
+    // Update slot to occupied
+   // slot.status = 'occupied';
+    slot.occupiedSince = new Date();
+    slot.lockedBy = null;
+    slot.lockExpiresAt = null;
+    slot.lastUpdated = new Date();
+
+    await slot.save();
+
+    pendingCommands.push({ cmd: 'START' });
+
+
+
+    res.status(200).json({
+      message: `Slot ${slotNumber} is now occupied by ${userName}.`,
+      slot
+    });
+
+  } catch (err) {
+    console.error('Error occupying slot:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
+
 
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
