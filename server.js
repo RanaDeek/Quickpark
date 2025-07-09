@@ -560,7 +560,6 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
-
 // Cancel reservation API
 app.put('/api/slots/:slotNumber/handle_reservation', async (req, res) => {
   const slotNumber = parseInt(req.params.slotNumber, 10);
@@ -588,8 +587,6 @@ app.put('/api/slots/:slotNumber/handle_reservation', async (req, res) => {
   }
 });
 
-
-
 app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
@@ -609,6 +606,27 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
     res.json({ message: 'Lock released' });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+app.put('/api/slots/:slotNumber', async (req, res) => {
+  const { slotNumber } = req.params;
+  const { status, lockedBy, lockExpiresAt } = req.body;
+  try {
+    const slot = await slotSchema.findOneAndUpdate(
+      { slotNumber: parseInt(slotNumber) },
+      {
+        status,
+        lockedBy: lockedBy || null,
+        lockExpiresAt: lockExpiresAt || null,
+        lastUpdated: new Date()
+      },
+      { new: true }
+    );
+    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
+    res.json(slot);
+  } catch (err) {
+    console.error('Error updating slot:', err);
+    res.status(500).json({ message: 'Server error.' });
   }
 });
 
