@@ -634,6 +634,38 @@ app.get('/api/cmd/next', (req, res) => {
   }
   res.json(pendingCommands.shift());
 });
+
+app.post('/api/slots/:slotNumber/arrive', async (req, res) => {
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+  const { userName } = req.body;
+  const now = new Date();
+
+  if (!userName) return res.status(400).json({ error: 'userName required' });
+
+  try {
+    const slot = await Slot.findOne({ slotNumber });
+
+    if (!slot)          return res.status(404).json({ error: 'Slot not found' });
+    if (slot.status !== 'reserved')
+      return res.status(400).json({ error: 'Slot is not reserved' });
+    if (slot.userName !== userName)
+      return res.status(403).json({ error: 'Reservation belongs to another user' });
+
+    /* ⿡ mark it occupied in DB */
+    slot.status        = 'occupied';
+    slot.occupiedSince = now;
+    slot.lastUpdated   = now;
+    await slot.save();
+
+    /* ⿢ tell the ESP32 to drop the flap */
+    pendingCommands.push({ cmd: 'START' });
+
+    res.json({ message: 'Gate opened – enjoy your parking!', slot });
+  } catch (err) {
+    console.error('[ARRIVE] error:', err);
+    res.status(500).json({ message: 'Server error' });
+  }
+});
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
