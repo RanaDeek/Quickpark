@@ -483,7 +483,7 @@ if (status) {
   } else if (status === 'reserved') {
     if (!lockedBy) return res.status(400).json({ error: 'lockedBy required when reserving.' });
     slot.status = 'reserved';
-    slot.lockedBy = lockedBy;
+    slot.lockedBy = userName;
     slot.lockExpiresAt = lockExpiresAt || new Date(Date.now() + 30 * 60 * 1000); // default 15 min
   } else {
     // available or other statuses
