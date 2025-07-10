@@ -456,60 +456,48 @@ app.get('/api/slots', async (req, res) => {
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
 app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
-  const { status, userName, lockedBy, lockExpiresAt, from } = req.body; // from = 'sensor' or other
+  const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
 
   try {
     const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
-    // Handle expired lock
     if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
       slot.lockedBy = null;
       slot.lockExpiresAt = null;
-      if (slot.status === 'reserved') {
-        slot.status = 'available';
-      }
     }
 
-    // Block sensor if slot is reserved and lock still valid
-    if (
-      from === 'sensor' &&
-      slot.status === 'reserved' &&
-      slot.lockExpiresAt &&
-      slot.lockExpiresAt > now
-    ) {
-      return res.status(403).json({ error: 'Slot is reserved; sensor updates not allowed.' });
+    if (from === 'sensor' && slot.status === 'reserved') {
+      return res.status(200).json({ message: 'Slot is reserved, sensor update ignored.', slot });
     }
 
-    // Prevent marking as occupied if already occupied
     if (status === 'occupied' && slot.status === 'occupied') {
       return res.status(409).json({ error: 'Slot already occupied.' });
     }
 
-    // Update status and userName if provided
+    if (slot.status === 'reserved' && status === 'available' && from !== 'admin') {
+      if (slot.userName !== userName && from !== 'sensor') {
+        return res.status(403).json({ error: 'Only the user who reserved this slot can make it available.' });
+      }
+    }
+
     if (status) {
       slot.status = status;
 
       if (status === 'occupied') {
-        if (from === 'sensor') {
-          slot.userName = slot.userName || null;
-        } else {
-          if (!userName) return res.status(400).json({ error: 'userName is required when occupying a slot.' });
-          slot.userName = userName;
-        }
-      } else {
+        if (!userName) return res.status(400).json({ error: 'userName is required when occupying a slot.' });
+        slot.userName = userName;
+        slot.occupiedSince = now;
+      } else if (status === 'available') {
         slot.userName = null;
+        slot.occupiedSince = null;
+        slot.timeStayed = 0;
       }
     }
 
-    // Only allow lock changes if not from sensor
-    if (from !== 'sensor') {
-      if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
-      if (lockExpiresAt !== undefined) {
-        slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : null;
-      }
-    }
+    if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
+    if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
 
     slot.lastUpdated = now;
     await slot.save();
@@ -520,6 +508,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
@@ -555,14 +544,13 @@ app.post('/api/slots/:slotNumber/select', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
+// Modified PUT endpoint with proper reserved slot protection
 app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
   const now = new Date();
 
   try {
-    // 1. Check if the user already has a reserved or occupied slot
     const existingSlot = await Slot.findOne({
       userName,
       status: { $in: ['reserved', 'occupied'] }
@@ -574,27 +562,61 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
       });
     }
 
-    // 2. Proceed to reserve the new slot
     const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
-   if (slot.from !== 'sensor' && (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now)) {
-  return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
-}
+    if (slot.status !== 'available') {
+      return res.status(400).json({ error: `Slot is currently ${slot.status}` });
+    }
 
+    if (!slot.lockExpiresAt || slot.lockExpiresAt < now) {
+      return res.status(403).json({ error: 'Lock has expired or not set' });
+    }
+
+    if (slot.lockedBy !== userName) {
+      return res.status(403).json({ error: 'You do not hold the lock' });
+    }
 
     slot.userName = userName;
     slot.status = 'reserved';
     slot.lockedBy = userName;
-    slot.lockExpiresAt = new Date(Date.now() + 30 * 60 * 1000);
+    slot.lockExpiresAt = new Date(now.getTime() + 30 * 60 * 1000); // +30 min
     slot.lastUpdated = now;
 
     await slot.save();
     res.json({ message: 'Slot reserved successfully', slot });
   } catch (err) {
+    console.error('Error confirming slot:', err);
     res.status(500).json({ error: err.message });
   }
 });
+const cleanupExpiredReservations = async () => {
+  const now = new Date();
+  const threshold = new Date(now.getTime() - 30 * 60 * 1000); // 30 minutes ago
+
+  try {
+    const result = await Slot.updateMany(
+      { status: 'reserved', lastUpdated: { $lt: threshold } },
+      { $set: {
+        status: 'available',
+        userName: null,
+        lockedBy: null,
+        lockExpiresAt: null
+      }}
+    );
+
+    if (result.modifiedCount > 0) {
+      console.log(`⏰ Cleared ${result.modifiedCount} expired reservations`);
+    }
+  } catch (error) {
+    console.error('Error cleaning up expired reservations:', error);
+  }
+};
+
+// Schedule cleanup every 5 minutes
+cron.schedule('*/5 * * * *', cleanupExpiredReservations);
+
+
 // Cancel reservation API
 app.put('/api/slots/:slotNumber/handle_reservation', async (req, res) => {
   const slotNumber = parseInt(req.params.slotNumber, 10);
