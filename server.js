@@ -456,7 +456,7 @@ app.get('/api/slots', async (req, res) => {
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
 app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
-  const { status, userName, lockedBy, lockExpiresAt } = req.body;
+  const { status, userName, lockedBy, lockExpiresAt, from } = req.body; // from = 'sensor' or other
   const now = new Date();
 
   try {
@@ -467,6 +467,19 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
       slot.lockedBy = null;
       slot.lockExpiresAt = null;
+      if (slot.status === 'reserved') {
+        slot.status = 'available';
+      }
+    }
+
+    // Block sensor if slot is reserved and lock still valid
+    if (
+      from === 'sensor' &&
+      slot.status === 'reserved' &&
+      slot.lockExpiresAt &&
+      slot.lockExpiresAt > now
+    ) {
+      return res.status(403).json({ error: 'Slot is reserved; sensor updates not allowed.' });
     }
 
     // Prevent marking as occupied if already occupied
@@ -479,18 +492,26 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       slot.status = status;
 
       if (status === 'occupied') {
-
-        if (!userName) return res.status(400).json({ error: 'userName is required when occupying a slot.' });
-        slot.userName = userName;
+        if (from === 'sensor') {
+          slot.userName = slot.userName || null;
+        } else {
+          if (!userName) return res.status(400).json({ error: 'userName is required when occupying a slot.' });
+          slot.userName = userName;
+        }
       } else {
         slot.userName = null;
       }
     }
 
-    if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
-    if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
+    // Only allow lock changes if not from sensor
+    if (from !== 'sensor') {
+      if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
+      if (lockExpiresAt !== undefined) {
+        slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : null;
+      }
+    }
 
- slot.lastUpdated = now;
+    slot.lastUpdated = now;
     await slot.save();
 
     res.json({ message: 'Slot updated successfully.', slot });
