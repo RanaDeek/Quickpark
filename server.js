@@ -602,9 +602,10 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     const slot = await Slot.findOne({ slotNumber });
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
-    if (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now) {
-      return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
-    }
+   if (from !== 'sensor' && (slot.lockedBy !== userName || !slot.lockExpiresAt || slot.lockExpiresAt < now)) {
+  return res.status(403).json({ error: 'You do not hold the lock or lock expired' });
+}
+
 
     slot.userName = userName;
     slot.status = 'reserved';
