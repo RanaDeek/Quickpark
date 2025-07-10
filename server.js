@@ -480,8 +480,9 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     if (status) {
       // === OCCUPIED ===
       if (status === 'occupied') {
-        // Reservation protection
+        // Reservation protection (skip if from sensor)
         if (
+          from !== 'sensor' &&
           slot.status === 'reserved' &&
           slot.lockedBy &&
           slot.lockExpiresAt &&
@@ -494,7 +495,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
         slot.status = 'occupied';
 
         if (from === 'sensor') {
-          // Sensor update: don't change userName unless needed
+          // Sensor update: preserve existing userName or set to null
           slot.userName = slot.userName || null;
         } else {
           if (!userName) {
@@ -526,8 +527,12 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     }
 
     // Optional override of lock info if not in 'reserved' status
-    if (lockedBy !== undefined && status !== 'reserved') slot.lockedBy = lockedBy || null;
-    if (lockExpiresAt !== undefined && status !== 'reserved') slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : null;
+    if (lockedBy !== undefined && status !== 'reserved') {
+      slot.lockedBy = lockedBy || null;
+    }
+    if (lockExpiresAt !== undefined && status !== 'reserved') {
+      slot.lockExpiresAt = lockExpiresAt ? new Date(lockExpiresAt) : null;
+    }
 
     slot.lastUpdated = now;
     await slot.save();
@@ -710,7 +715,6 @@ app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
 
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
