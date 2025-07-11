@@ -459,47 +459,50 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
   const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
 
-  console.log('Incoming slot update:', req.body);
+  console.log(`[API] Incoming slot update: slot=${slotNumber}, from=${from}, status=${status}`);
 
   try {
     const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
-    // Clear expired locks
+    // ─── Expire lock if needed ──────────────────────
     if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
       slot.lockedBy = null;
       slot.lockExpiresAt = null;
     }
 
-    // Allow sensor to update reserved slot only to occupied
+    // ─── Sensor update rules ─────────────────────────
     if (from === 'sensor' && slot.status === 'reserved' && status !== 'occupied') {
       return res.status(200).json({ message: 'Slot is reserved, sensor update ignored.', slot });
     }
 
-    // If sensor sets occupied, require userName
-    if (from === 'sensor' && status === 'occupied' && !userName) {
-      return res.status(400).json({ error: 'userName required when sensor sets slot to occupied.' });
+    // Sensor fallback: handle missing userName gracefully
+    if (from === 'sensor' && status === 'occupied') {
+      if (!userName) {
+        console.warn(`[SENSOR] No userName provided for slot ${slotNumber}, applying fallback.`);
+      }
+      slot.userName = userName || slot.userName || 'unknown_sensor';
     }
 
-    // Prevent occupying a slot already occupied
+    // Prevent overwriting an already occupied slot
     if (status === 'occupied' && slot.status === 'occupied') {
       return res.status(409).json({ error: 'Slot already occupied.' });
     }
 
-    // Only the user who reserved can make slot available (except admin and sensor)
+    // Protect reserved → available unless allowed
     if (slot.status === 'reserved' && status === 'available' && from !== 'admin' && from !== 'sensor') {
       if (slot.userName !== userName) {
         return res.status(403).json({ error: 'Only the user who reserved this slot can make it available.' });
       }
     }
 
-    // Update status and related fields
+    // ─── Apply status updates ────────────────────────
     if (status) {
       slot.status = status;
 
       if (status === 'occupied') {
-        slot.userName = userName;
         slot.occupiedSince = now;
+        // slot.userName already set above (including fallback)
       } else if (status === 'available') {
         // Sensor cannot free reserved slot
         if (from === 'sensor' && slot.status === 'reserved') {
@@ -511,7 +514,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       }
     }
 
-    // Update lock info if provided
+    // ─── Lock management ─────────────────────────────
     if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
     if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
 
@@ -519,46 +522,13 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     await slot.save();
 
     res.json({ message: 'Slot updated successfully.', slot });
+
   } catch (err) {
-    console.error('Error updating slot:', err);
+    console.error('[ERROR] Updating slot:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
 
-app.post('/api/slots/:slotNumber/select', async (req, res) => {
-  const { userName } = req.body;
-  const slotNumber = parseInt(req.params.slotNumber, 10);
-
-  const now = new Date();
-  const lockDurationMs = 2 * 60 * 1000; // 2 minutes
-
-  try {
-    const slot = await Slot.findOne({ slotNumber });
-
-    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
-
-    if (slot.lockedBy && slot.lockExpiresAt && slot.lockExpiresAt > now) {
-      if (slot.lockedBy === userName) {
-        // Extend lock
-        slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
-        await slot.save();
-        return res.status(200).json({ message: 'Lock extended.', slot });
-      } else {
-        return res.status(409).json({ message: 'Slot is currently locked by another user.' });
-      }
-    }
-
-    // Lock it
-    slot.lockedBy = userName;
-    slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
-    await slot.save();
-
-    res.status(200).json({ message: 'Slot locked successfully.', slot });
-  } catch (error) {
-    console.error('Error locking slot:', error);
-    res.status(500).json({ message: 'Server error.' });
-  }
-});
 // Modified PUT endpoint with proper reserved slot protection
 app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   const { userName } = req.body;
