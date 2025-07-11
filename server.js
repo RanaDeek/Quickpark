@@ -529,6 +529,40 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
   }
 });
 
+app.post('/api/slots/:slotNumber/select', async (req, res) => {
+  const { userName } = req.body;
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+
+  const now = new Date();
+  const lockDurationMs = 2 * 60 * 1000; // 2 minutes
+
+  try {
+    const slot = await Slot.findOne({ slotNumber });
+
+    if (!slot) return res.status(404).json({ message: 'Slot not found.' });
+
+    if (slot.lockedBy && slot.lockExpiresAt && slot.lockExpiresAt > now) {
+      if (slot.lockedBy === userName) {
+        // Extend lock
+        slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
+        await slot.save();
+        return res.status(200).json({ message: 'Lock extended.', slot });
+      } else {
+        return res.status(409).json({ message: 'Slot is currently locked by another user.' });
+      }
+    }
+
+    // Lock it
+    slot.lockedBy = userName;
+    slot.lockExpiresAt = new Date(now.getTime() + lockDurationMs);
+    await slot.save();
+
+    res.status(200).json({ message: 'Slot locked successfully.', slot });
+  } catch (error) {
+    console.error('Error locking slot:', error);
+    res.status(500).json({ message: 'Server error.' });
+  }
+});
 // Modified PUT endpoint with proper reserved slot protection
 app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
   const { userName } = req.body;
