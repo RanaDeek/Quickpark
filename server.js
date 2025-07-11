@@ -843,7 +843,9 @@ app.post('/api/login', async (req, res) => {
 });
 
 // Additional endpoints were already valid. The rest of your code is logically solid and only needed template literal fixes.
-
+app.get('/', (req, res) => {
+  res.send('🚗 Welcome to Quickpark API — Server is Running!');
+});
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
 });
