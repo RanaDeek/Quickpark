@@ -454,62 +454,74 @@ app.get('/api/slots', async (req, res) => {
   }
 });
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
+/* ------------------------------------------------------------------
+   Unified PUT  /api/slots/:slotNumber
+   – mobile / web clients   ▸ must send userName when setting occupied
+   – hardware (“sensor” or “esp32”) ▸ userName may be omitted
+------------------------------------------------------------------- */
 app.put('/api/slots/:slotNumber', async (req, res) => {
-  const { slotNumber } = req.params;
-  const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
+  const { slotNumber }          = req.params;
+  const { status, userName,
+          lockedBy, lockExpiresAt,
+          from = 'app' }         = req.body;         // <-- default "app"
   const now = new Date();
 
   try {
-    const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
+    const slot = await Slot.findOne({ slotNumber: +slotNumber });
     if (!slot) return res.status(404).json({ message: 'Slot not found.' });
 
+    /* ── 1.  housekeeping ─────────────────────────────────────── */
     if (slot.lockExpiresAt && slot.lockExpiresAt < now) {
       slot.lockedBy = null;
       slot.lockExpiresAt = null;
     }
 
+    /* ── 2.  protect reserved slots from sensor overwrite ─────── */
     if (from === 'sensor' && slot.status === 'reserved') {
-      return res.status(200).json({ message: 'Slot is reserved, sensor update ignored.', slot });
+      return res
+        .status(200)
+        .json({ message: 'Slot is reserved, sensor update ignored.', slot });
     }
 
-    if (status === 'occupied' && slot.status === 'occupied') {
+    /* ── 3.  validate transition to OCCUPIED ─────────────────── */
+    const isHw   = from === 'sensor' || from === 'esp32';
+    const needsUser = status === 'occupied' && !isHw;
+
+    if (needsUser && !userName) {
+      return res
+        .status(400)
+        .json({ error: 'userName is required when occupying a slot.' });
+    }
+
+    if (status === 'occupied' && slot.status === 'occupied')
       return res.status(409).json({ error: 'Slot already occupied.' });
-    }
 
-    if (slot.status === 'reserved' && status === 'available' && from !== 'admin') {
-      if (slot.userName !== userName && from !== 'sensor') {
-        return res.status(403).json({ error: 'Only the user who reserved this slot can make it available.' });
-      }
-    }
-
+    /* ── 4.  apply changes ────────────────────────────────────── */
     if (status) {
       slot.status = status;
 
       if (status === 'occupied') {
-        if (!userName) return res.status(400).json({ error: 'userName is required when occupying a slot.' });
-        slot.userName = userName;
+        slot.userName      = isHw ? null : userName;
         slot.occupiedSince = now;
       } else if (status === 'available') {
-        slot.userName = null;
+        slot.userName      = null;
         slot.occupiedSince = null;
-        slot.timeStayed = 0;
+        slot.timeStayed    = 0;
       }
     }
 
-    if (lockedBy !== undefined) slot.lockedBy = lockedBy || null;
+    if (lockedBy      !== undefined) slot.lockedBy      = lockedBy      || null;
     if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
 
     slot.lastUpdated = now;
     await slot.save();
 
-    res.json({ message: 'Slot updated successfully.', slot });
+    return res.json({ message: 'Slot updated successfully.', slot });
   } catch (err) {
     console.error('Error updating slot:', err);
-    res.status(500).json({ message: 'Server error.' });
+    return res.status(500).json({ message: 'Server error.' });
   }
 });
-
-
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
