@@ -10,7 +10,9 @@ const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
 typeof global.pendingCommands === 'undefined' && (global.pendingCommands = []);
 const pendingCommands = global.pendingCommands;
 
-
+import express   from 'express';
+import mongoose  from 'mongoose';
+import dotenv    from 'dotenv';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -629,4 +631,42 @@ app.get('/api/cmd/next', (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+});
+
+
+app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
+  const slotNumber = parseInt(req.params.slotNumber, 10);
+  const { userName } = req.body;
+
+  try {
+    const slot = await Slot.findOne({ slotNumber });
+    
+    // Verify the user who reserved this slot is the one requesting access
+    if (!slot || slot.status !== 'reserved' || slot.userName !== userName) {
+      return res.status(403).json({ 
+        message: 'You can only access slots you have reserved.' 
+      });
+    }
+
+    // Send START command to ESP32 (this opens the gate)
+    pendingCommands.push({ 
+      cmd: 'START',
+      slot: A0${slotNumber},
+      userName: userName 
+    });
+
+    // Keep status as "reserved" - sensor will change to "occupied"
+    slot.lastUpdated = new Date();
+    await slot.save();
+
+    res.json({ 
+      message: 'Gate opening! Drive in and park.',
+      slot,
+      nextStep: 'Your car will be detected automatically once parked.'
+    });
+    
+  } catch (err) {
+    console.error('Error opening gate:', err);
+    res.status(500).json({ message: 'Server error.' });
+  }
 });
