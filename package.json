@@ -15,12 +15,8 @@
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
     "jsonwebtoken": "^9.0.2",
-<<<<<<< HEAD
     "mongoose": "^8.16.2",
-=======
-    "mongoose": "^8.14.1",
     "node-cron": "^4.2.0",
->>>>>>> 4cdf67abc9e69a4f28df003b9c4efbb857cd03b1
     "nodemailer": "^7.0.2",
     "stripe": "^18.1.1"
   },
