@@ -459,6 +459,11 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
   const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
 
+  const apiKey = req.headers['x-api-key'];
+  if (from === 'sensor' && apiKey !== 'MY_SECRET_DEVICE_TOKEN') {
+    return res.status(401).json({ error: 'Unauthorized sensor request.' });
+  }
+
   console.log(`[API] Incoming slot update: slot=${slotNumber}, from=${from}, status=${status}`);
 
   try {
@@ -472,24 +477,29 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     }
 
     // ─── Sensor update rules ─────────────────────────
-    if (from === 'sensor' && slot.status === 'reserved' && status !== 'occupied') {
-      return res.status(200).json({ message: 'Slot is reserved, sensor update ignored.', slot });
-    }
-
-    // Sensor fallback: handle missing userName gracefully
-    if (from === 'sensor' && status === 'occupied') {
-      if (!userName) {
-        console.warn(`[SENSOR] No userName provided for slot ${slotNumber}, applying fallback.`);
+    if (from === 'sensor') {
+      if (slot.status === 'reserved') {
+        if (status === 'available') {
+          return res.status(200).json({ message: 'Reserved slot, sensor cannot free it.', slot });
+        }
+        if (status === 'occupied') {
+          console.log(`[SENSOR] Reserved slot ${slotNumber} now occupied.`);
+          // continue normally
+        }
+      } else if (slot.status === 'occupied' && status === 'occupied') {
+        return res.status(409).json({ error: 'Slot already occupied.' });
       }
-      slot.userName = userName || slot.userName || 'unknown_sensor';
+
+      // Fallback user assignment
+      if (status === 'occupied') {
+        if (!userName) {
+          console.warn(`[SENSOR] No userName provided for slot ${slotNumber}, applying fallback.`);
+        }
+        slot.userName = userName || slot.userName || 'unknown_sensor';
+      }
     }
 
-    // Prevent overwriting an already occupied slot
-    if (status === 'occupied' && slot.status === 'occupied') {
-      return res.status(409).json({ error: 'Slot already occupied.' });
-    }
-
-    // Protect reserved → available unless allowed
+    // ─── Protect reserved → available unless allowed ───────
     if (slot.status === 'reserved' && status === 'available' && from !== 'admin' && from !== 'sensor') {
       if (slot.userName !== userName) {
         return res.status(403).json({ error: 'Only the user who reserved this slot can make it available.' });
@@ -502,12 +512,8 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
 
       if (status === 'occupied') {
         slot.occupiedSince = now;
-        // slot.userName already set above (including fallback)
+        // userName already handled above
       } else if (status === 'available') {
-        // Sensor cannot free reserved slot
-        if (from === 'sensor' && slot.status === 'reserved') {
-          return res.status(200).json({ message: 'Reserved slot, sensor cannot free it.', slot });
-        }
         slot.userName = null;
         slot.occupiedSince = null;
         slot.timeStayed = 0;
