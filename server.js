@@ -454,7 +454,7 @@ app.get('/api/slots', async (req, res) => {
   }
 });
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
-app.put('/api/slots/:slotNumber', async (req, res) => {
+router.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
   const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
@@ -484,13 +484,11 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
         }
         if (status === 'occupied') {
           console.log(`[SENSOR] Reserved slot ${slotNumber} now occupied.`);
-          // continue normally
         }
       } else if (slot.status === 'occupied' && status === 'occupied') {
         return res.status(409).json({ error: 'Slot already occupied.' });
       }
 
-      // Fallback user assignment
       if (status === 'occupied') {
         if (!userName) {
           console.warn(`[SENSOR] No userName provided for slot ${slotNumber}, applying fallback.`);
@@ -499,7 +497,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
       }
     }
 
-    // ─── Protect reserved → available unless allowed ───────
+    // ─── Reserved → Available protection ─────────────
     if (slot.status === 'reserved' && status === 'available' && from !== 'admin' && from !== 'sensor') {
       if (slot.userName !== userName) {
         return res.status(403).json({ error: 'Only the user who reserved this slot can make it available.' });
@@ -508,16 +506,19 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
 
     // ─── Apply status updates ────────────────────────
     if (status) {
-      slot.status = status;
-
       if (status === 'occupied') {
-        slot.occupiedSince = now;
-        // userName already handled above
+        if (!slot.occupiedSince) {
+          slot.occupiedSince = now;
+        }
       } else if (status === 'available') {
+        if (slot.occupiedSince) {
+          const duration = Math.floor((now - slot.occupiedSince) / 1000);
+          slot.timeStayed = duration;
+        }
         slot.userName = null;
         slot.occupiedSince = null;
-        slot.timeStayed = 0;
       }
+      slot.status = status;
     }
 
     // ─── Lock management ─────────────────────────────
@@ -525,6 +526,8 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     if (lockExpiresAt !== undefined) slot.lockExpiresAt = lockExpiresAt || null;
 
     slot.lastUpdated = now;
+
+    console.log(`[DEBUG] Saving slot: ${JSON.stringify(slot.toObject(), null, 2)}`);
     await slot.save();
 
     res.json({ message: 'Slot updated successfully.', slot });
@@ -534,7 +537,6 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     res.status(500).json({ message: 'Server error.' });
   }
 });
-
 app.post('/api/slots/:slotNumber/select', async (req, res) => {
   const { userName } = req.body;
   const slotNumber = parseInt(req.params.slotNumber, 10);
