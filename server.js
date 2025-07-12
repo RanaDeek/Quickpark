@@ -691,54 +691,57 @@ app.post('/api/slots/:slotNumber/cancel', async (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
+});// Occupy a parking slot (after reservation)
+app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
   const slotNumber = parseInt(req.params.slotNumber, 10);
-  const { userName } = req.body;
-  
+  const { userName, duration = 1 } = req.body;  // Optional: duration in 15s units
+
   if (!userName) {
     return res.status(400).json({ message: 'Missing userName in request body.' });
   }
-  
+
   try {
     const slot = await Slot.findOne({ slotNumber });
+
     if (!slot) {
       return res.status(404).json({ message: 'Slot not found.' });
     }
-    
-    // Check if slot is already occupied
+
     if (slot.status === 'occupied') {
       return res.status(409).json({ message: 'Slot is already occupied.' });
     }
-    
-    // Only allow occupation if reserved by the same user
+
     if (slot.status !== 'reserved' || slot.userName !== userName) {
       return res.status(400).json({ message: 'Slot must be reserved by the same user before occupation.' });
     }
-    
-    // Update slot to occupied
-    slot.status = 'occupied';  // Uncomment this line!
+
+    // Format slot label (e.g., A01, A02, ...)
+    const slotLabel = `A${slotNumber.toString().padStart(2, '0')}`;
+
+    // Update metadata — status will be updated by ESP32 later
     slot.occupiedSince = new Date();
     slot.lockedBy = null;
     slot.lockExpiresAt = null;
     slot.lastUpdated = new Date();
+
     await slot.save();
-    
-    // FIXED: Send START command with slot and user info
-    pendingCommands.push({ 
-      cmd: 'START', 
-      slot: A${slotNumber.toString().padStart(2, '0')},  // A01, A02, A03, A04
-      userName: userName 
-    });
-    
-    res.status(200).json({
-      message: Slot ${slotNumber} is now occupied by ${userName}.,
+
+    // Send commands to ESP32 in proper order
+    pendingCommands.push({ cmd: 'PIN', slot: slotLabel, pin: userName });
+    pendingCommands.push({ cmd: `D${duration}` });
+    pendingCommands.push({ cmd: 'START', slot: slotLabel, userName });
+
+    return res.status(200).json({
+      message: `Slot ${slotNumber} is now occupied by ${userName}.`,
       slot
     });
+
   } catch (err) {
     console.error('Error occupying slot:', err);
     res.status(500).json({ message: 'Server error.' });
   }
 });
+
 // POST a new command (from Flutter)
 app.post('/api/cmd', (req, res) => {
   const { cmd, slot, pin, duration } = req.body;
