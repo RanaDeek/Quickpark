@@ -454,7 +454,7 @@ app.get('/api/slots', async (req, res) => {
   }
 });
 // Unified PUT route to update status, lock, unlock, confirm booking, etc.
-router.put('/api/slots/:slotNumber', async (req, res) => {
+app.put('/api/slots/:slotNumber', async (req, res) => {
   const { slotNumber } = req.params;
   const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
