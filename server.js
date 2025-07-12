@@ -102,7 +102,7 @@ async function sendOTPEmail(email, otp) {
     from: process.env.EMAIL_USER,
     to: email,
     subject: 'Your OTP Code for Password Reset',
-    text: `Your OTP code is: ${otp}`,
+    text: Your OTP code is: ${otp},
   };
 
   await transporter.sendMail(mailOptions);
@@ -294,7 +294,7 @@ app.post('/api/charge-user', async (req, res) => {
       userId: user._id,
       amount,
       ownerNumber,
-      note: `Owner ${ownerNumber} charged user ${userId}`,
+      note: Owner ${ownerNumber} charged user ${userId},
     });
 
     await log.save();
@@ -392,7 +392,7 @@ app.post('/api/charge-bank', async (req, res) => {
     const payment = new Payment({
       userName,
       amount,
-      description: transactionId ? `Bank Top-Up (Transaction ID: ${transactionId})` : 'Bank Top-Up'
+      description: transactionId ? Bank Top-Up (Transaction ID: ${transactionId}) : 'Bank Top-Up'
     });
 
     await payment.save();
@@ -459,7 +459,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
   const { status, userName, lockedBy, lockExpiresAt, from } = req.body;
   const now = new Date();
 
-  console.log(`[API] Incoming slot update: slot=${slotNumber}, from=${from}, status=${status}`);
+  console.log([API] Incoming slot update: slot=${slotNumber}, from=${from}, status=${status});
 
   try {
     const slot = await Slot.findOne({ slotNumber: parseInt(slotNumber, 10) });
@@ -479,7 +479,7 @@ app.put('/api/slots/:slotNumber', async (req, res) => {
     // Sensor fallback: handle missing userName gracefully
     if (from === 'sensor' && status === 'occupied') {
       if (!userName) {
-        console.warn(`[SENSOR] No userName provided for slot ${slotNumber}, applying fallback.`);
+        console.warn([SENSOR] No userName provided for slot ${slotNumber}, applying fallback.);
       }
       slot.userName = userName || slot.userName || 'unknown_sensor';
     }
@@ -577,7 +577,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
 
     if (existingSlot) {
       return res.status(400).json({
-        error: `You already have a ${existingSlot.status} slot (#${existingSlot.slotNumber})`
+        error: You already have a ${existingSlot.status} slot (#${existingSlot.slotNumber})
       });
     }
 
@@ -585,7 +585,7 @@ app.put('/api/slots/:slotNumber/confirm', async (req, res) => {
     if (!slot) return res.status(404).json({ error: 'Slot not found' });
 
     if (slot.status !== 'available') {
-      return res.status(400).json({ error: `Slot is currently ${slot.status}` });
+      return res.status(400).json({ error: Slot is currently ${slot.status} });
     }
 
     if (!slot.lockExpiresAt || slot.lockExpiresAt < now) {
@@ -625,7 +625,7 @@ const cleanupExpiredReservations = async () => {
     );
 
     if (result.modifiedCount > 0) {
-      console.log(`⏰ Cleared ${result.modifiedCount} expired reservations`);
+      console.log(⏰ Cleared ${result.modifiedCount} expired reservations);
     }
   } catch (error) {
     console.error('Error cleaning up expired reservations:', error);
@@ -724,7 +724,7 @@ app.put('/api/slots/:slotNumber/occupy', async (req, res) => {
 
 
     res.status(200).json({
-      message: `Slot ${slotNumber} is now occupied by ${userName}.`,
+      message: Slot ${slotNumber} is now occupied by ${userName}.,
       slot
     });
 
@@ -749,5 +749,5 @@ app.get('/api/cmd/next', (req, res) => {
   res.json(pendingCommands.shift());
 });
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(🚀 Server running on port ${PORT});
 });
