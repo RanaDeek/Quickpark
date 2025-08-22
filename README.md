@@ -26,7 +26,8 @@ This project introduces a **Smart Car Parking System** using **ESP32, IR sensors
 
 ---
 ## 📄 Project Report
-<embed src="docs/Smart-Car-Parking-Report.pdf" type="application/pdf" width="100%" height="600px" />
+You can read the full report directly here:  
+[📖 Smart Car Parking Report](Smart-Car-Parking-Report.pdf)
 
 ---
 
