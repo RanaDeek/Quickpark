@@ -1,11 +1,6 @@
 # 🚗 Smart Car Parking System  
 
-[![GitHub repo](https://img.shields.io/badge/GitHub-SmartParking-blue?logo=github)](https://github.com/your-username/smart-parking-system)  
-[![Made with Flutter](https://img.shields.io/badge/Mobile-Flutter-blue?logo=flutter)](https://flutter.dev)  
-[![IoT ESP32](https://img.shields.io/badge/Hardware-ESP32-green?logo=espressif)](https://www.espressif.com/)  
-[![Database MongoDB](https://img.shields.io/badge/Database-MongoDB-brightgreen?logo=mongodb)](https://www.mongodb.com/)  
 
----
 
 ## 📌 Abstract
 Urbanization and the rising number of vehicles have led to a shortage of parking spaces, congestion, and wasted fuel.  
