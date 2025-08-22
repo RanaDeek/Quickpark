@@ -1,55 +1,65 @@
-# 🚗 Smart Car Parking System
+# 🚗 Smart Car Parking System  
 
-## 📌 Overview
-The **Smart Car Parking System** is an IoT-based solution designed to tackle parking congestion in urban areas. The system integrates **ESP32 microcontrollers, infrared (IR) sensors, servo motors, Node.js backend, MongoDB, and a Flutter mobile app** to provide real-time monitoring, automated gate control, and secure digital payments.  
-
-Developed as a **Graduation Project at Birzeit University**, this system aims to improve parking efficiency, reduce fuel consumption, and support smart city initiatives in Palestine.
+[![GitHub repo](https://img.shields.io/badge/GitHub-SmartParking-blue?logo=github)](https://github.com/your-username/smart-parking-system)  
+[![Made with Flutter](https://img.shields.io/badge/Mobile-Flutter-blue?logo=flutter)](https://flutter.dev)  
+[![IoT ESP32](https://img.shields.io/badge/Hardware-ESP32-green?logo=espressif)](https://www.espressif.com/)  
+[![Database MongoDB](https://img.shields.io/badge/Database-MongoDB-brightgreen?logo=mongodb)](https://www.mongodb.com/)  
 
 ---
 
-## ✨ Features
-- **Real-Time Slot Monitoring** → IR sensors detect vehicle presence and update availability instantly.  
-- **Automated Gate Control** → ESP32 + Servo control gates automatically when a slot is available/reserved.  
-- **Mobile App (Flutter)** → Allows users to:
-  - View available parking slots  
-  - Reserve a slot remotely  
-  - Manage digital wallet and payments  
-  - Receive notifications (reminders, overstay alerts, confirmations)  
-- **Secure Payment Options**:
-  - In-app wallet system  
-  - Manual recharge by agents (no need to link bank account)  
-- **Admin Dashboard** → Provides slot analytics, revenue tracking, and misuse detection.  
-- **Cloud-Backed Database** → MongoDB + Firebase ensure real-time sync and scalability.  
+## 📌 Abstract
+Urbanization and the rising number of vehicles have led to a shortage of parking spaces, congestion, and wasted fuel.  
+This project introduces a **Smart Car Parking System** using **ESP32, IR sensors, servo motors, Node.js backend, MongoDB, and a Flutter mobile app** to:  
+- Monitor slot availability in real-time  
+- Automate gate control  
+- Provide digital reservations & payments  
 
 ---
 
 ## 🏗️ System Architecture
-The project consists of three main components:
-
-### 1. Frontend (Mobile App - Flutter)  
-- User onboarding (login/signup)  
-- Destination & slot selection  
-- Reservation timer & notifications  
-- Wallet & payment history  
-- Support chatbot  
-
-### 2. Backend (Node.js + Express + MongoDB)  
-- User authentication (JWT, OTP reset)  
-- Slot reservation & locking system  
-- Digital wallet and payment processing  
-- REST API + WebSocket communication with ESP32 hardware  
-
-### 3. Hardware (ESP32 + IR + Servo)  
-- **ESP32-WROOM-32** microcontroller  
-- **Dual IR break-beam sensors** for vehicle detection  
-- **SG90 Micro-Servo** for gate barrier control  
-- **Power shield** with safe voltage regulation  
+![System Architecture](docs/system-architecture.png)  
+*(Diagram taken from project report – replace with your Prezi/PDF figure)*  
 
 ---
 
-## 🔧 Installation & Setup
+## ✨ Features
+✔ Real-time slot monitoring with IR sensors  
+✔ Remote reservations via mobile app  
+✔ Automated gate access using ESP32 + servo  
+✔ Secure wallet-based payments  
+✔ Admin dashboard for monitoring and analytics  
+✔ Notifications for overstay and confirmations  
 
-### 1. Clone the repository
-```bash
-git clone https://github.com/your-username/smart-parking-system.git
-cd smart-parking-system
+---
+
+## 🎥 Demo Presentation
+👉 [Watch Prezi Presentation](https://prezi.com/view/jahzM2iSfmu3ahJ3t5KP/)  
+
+---
+
+
+
+## 🔧 Installation & Setup
+*(same steps as before)*  
+
+---
+
+## 🚀 Future Enhancements
+- 🤖 AI chatbot (natural language & voice)  
+- ♿ Accessible-bay enforcement  
+- 🔋 EV charging slots  
+- 🗺️ Google Maps geofencing  
+
+---
+
+## 👨‍💻 Authors
+- Faten Sultan  
+- Rana Deek  
+- Joud Hijaz  
+
+**Supervisor:** Dr. Ashraf Al-Rimawi – Birzeit University  
+
+---
+
+## 📜 License
+Educational use under Birzeit University – contact authors for commercial rights.
