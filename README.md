@@ -11,12 +11,6 @@ This project introduces a **Smart Car Parking System** using **ESP32, IR sensors
 
 ---
 
-## 🏗️ System Architecture
-![System Architecture](docs/system-architecture.png)  
-*(Diagram taken from project report – replace with your Prezi/PDF figure)*  
-
----
-
 ## ✨ Features
 ✔ Real-time slot monitoring with IR sensors  
 ✔ Remote reservations via mobile app  
@@ -33,9 +27,6 @@ This project introduces a **Smart Car Parking System** using **ESP32, IR sensors
 ---
 
 
-
-## 🔧 Installation & Setup
-*(same steps as before)*  
 
 ---
 
