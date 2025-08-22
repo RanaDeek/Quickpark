@@ -25,8 +25,8 @@ This project introduces a **Smart Car Parking System** using **ESP32, IR sensors
 👉 [Watch Prezi Presentation](https://prezi.com/view/jahzM2iSfmu3ahJ3t5KP/)  
 
 ---
-
-
+## 📄 Project Report
+<embed src="docs/Smart-Car-Parking-Report.pdf" type="application/pdf" width="100%" height="600px" />
 
 ---
 
